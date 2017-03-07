@@ -39,6 +39,7 @@
 #include <mach/mach_error.h>
 #include <servers/bootstrap.h>
 #include <bootstrap_priv.h>
+#include <os/activity.h>
 
 #include "SCDynamicStoreInternal.h"
 #include "config.h"		/* MiG generated file */

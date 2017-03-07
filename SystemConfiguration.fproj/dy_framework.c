@@ -168,7 +168,7 @@ _IOObjectRelease(io_object_t object)
 }
 
 
-#if	!TARGET_OS_IPHONE
+#if	!TARGET_OS_IPHONE && !DARLING
 
 __private_extern__ IOReturn
 _IOPMConnectionAcknowledgeEvent(IOPMConnection myConnection, IOPMConnectionMessageToken token)

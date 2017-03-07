@@ -31,7 +31,7 @@
 #include <mach/mach.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
-#if	!TARGET_OS_IPHONE
+#if	!TARGET_OS_IPHONE && !DARLING
 #include <IOKit/pwr_mgt/IOPMLibPrivate.h>
 #endif	// !TARGET_OS_IPHONE
 #include <Security/Security.h>
@@ -85,7 +85,7 @@ _IOObjectRelease			(
 					);
 #define IOObjectRelease _IOObjectRelease
 
-#if	!TARGET_OS_IPHONE
+#if	!TARGET_OS_IPHONE && !DARLING
 
 IOReturn
 _IOPMConnectionAcknowledgeEvent		(

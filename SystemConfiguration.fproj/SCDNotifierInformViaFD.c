@@ -39,6 +39,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <sys/fileport.h>
 
 Boolean
 SCDynamicStoreNotifyFileDescriptor(SCDynamicStoreRef	store,

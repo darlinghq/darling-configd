@@ -71,9 +71,14 @@
 #include <sys/proc_info.h>
 #include <libproc.h>
 
+#ifndef DARLING
 #include <ppp/ppp_msg.h>
-#include "pppcontroller.h"
 #include <ppp/pppcontroller_types.h>
+#else
+#include "ne_session.h"
+#include "pppcontroller.h"
+#include "config_types.h"
+#endif
 
 #ifndef	PPPCONTROLLER_SERVER_PRIV
 #define	PPPCONTROLLER_SERVER_PRIV	PPPCONTROLLER_SERVER

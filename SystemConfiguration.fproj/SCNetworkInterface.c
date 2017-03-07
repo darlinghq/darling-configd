@@ -42,7 +42,7 @@
 #include "SCHelper_client.h"
 #include "plugin_shared.h"
 
-#if	!TARGET_OS_IPHONE
+#if	!TARGET_OS_IPHONE && !DARLING
 #include <EAP8021X/EAPClientProperties.h>
 #else	// !TARGET_OS_IPHONE
 #ifndef	kEAPClientPropUserName
@@ -59,7 +59,7 @@
 #include <IOKit/network/IONetworkController.h>
 #include <IOKit/network/IONetworkInterface.h>
 #include <IOKit/network/IOEthernetInterface.h>	// for kIOEthernetInterfaceClass
-#include <IOKit/serial/IOSerialKeys.h>
+//#include <IOKit/serial/IOSerialKeys.h>
 #include <IOKit/storage/IOStorageDeviceCharacteristics.h>
 #if	!TARGET_OS_SIMULATOR
 #include <IOKit/usb/IOUSBLib.h>
