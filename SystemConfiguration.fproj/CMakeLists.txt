@@ -9,17 +9,6 @@ include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/helper
 	${CMAKE_CURRENT_BINARY_DIR}
 	${CMAKE_CURRENT_BINARY_DIR}/helper
-	${CMAKE_SOURCE_DIR}/src/external/corefoundation
-	${CMAKE_SOURCE_DIR}/src/external/libclosure
-	${CMAKE_SOURCE_DIR}/src/external/security/include
-	${CMAKE_SOURCE_DIR}/src/external/syslog/libsystem_asl.tproj/include
-	${CMAKE_SOURCE_DIR}/src/external/IOKitUser
-	${CMAKE_SOURCE_DIR}/src/external/configd/IPMonitorControl
-	${CMAKE_SOURCE_DIR}/src/launchd/liblaunch
-	${CMAKE_SOURCE_DIR}/src/libc/gen
-	${CMAKE_SOURCE_DIR}/src/sandbox
-	${CMAKE_SOURCE_DIR}/src/kernel/libsyscall/wrappers/libproc
-	${CMAKE_SOURCE_DIR}/kernel-include/iokit
 	${CMAKE_CURRENT_SOURCE_DIR}/../Plugins/common
 )
 
