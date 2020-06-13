@@ -1,6 +1,6 @@
 project(SystemConfiguration)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -mmacosx-version-min=10.12 -Wno-gcc-compat -Wno-ignored-attributes")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -nostdinc -Wno-gcc-compat -Wno-ignored-attributes")
 
 include(darling_framework)
 
