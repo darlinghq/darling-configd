@@ -1,15 +1,15 @@
 /*
- * Copyright (c) 2006, 2008, 2009, 2011-2015 Apple Inc. All rights reserved.
+ * Copyright (c) 2006, 2008, 2009, 2011-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
  * compliance with the License. Please obtain a copy of the License at
  * http://www.opensource.apple.com/apsl/ and read it before using this
  * file.
- * 
+ *
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -17,7 +17,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
  * Please see the License for the specific language governing rights and
  * limitations under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -49,7 +49,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <net/if.h>
-#include <network/conninfo.h>
+#include <nw/private.h>
 
 #pragma mark SCNetworkSignature Supporting APIs
 
@@ -89,9 +89,9 @@ create_ipv6_services_pattern(void)
 }
 
 static CFDictionaryRef
-copy_services_for_address_family(CFAllocatorRef alloc,
-				 int af)
+copy_services_for_address_family(CFAllocatorRef alloc, int af)
 {
+#pragma unused(alloc)
 	CFDictionaryRef info;
 	CFArrayRef      patterns;
 	CFStringRef     pattern;
@@ -134,6 +134,7 @@ CFStringRef
 SCNetworkSignatureCopyActiveIdentifierForAddress(CFAllocatorRef alloc,
 						 const struct sockaddr * addr)
 {
+#pragma unused(alloc)
 	CFStringRef		ident	= NULL;
 	CFDictionaryRef		info = NULL;
 	CFStringRef		global_state_v4_key = NULL;
@@ -157,7 +158,7 @@ SCNetworkSignatureCopyActiveIdentifierForAddress(CFAllocatorRef alloc,
 
 	/* ALIGN: force alignment */
 	sin_p = (struct sockaddr_in *)(void *)addr;
-	bcopy(&sin_p->sin_addr.s_addr, &s_addr, sizeof(s_addr));
+	memcpy(&s_addr, &sin_p->sin_addr.s_addr, sizeof(s_addr));
 	if (s_addr != 0) {
 		_SCErrorSet(kSCStatusInvalidArgument);
 		goto done;
@@ -235,6 +236,7 @@ done:
 CFArrayRef /* of CFStringRef's */
 SCNetworkSignatureCopyActiveIdentifiers(CFAllocatorRef alloc)
 {
+#pragma unused(alloc)
 	CFMutableArrayRef	active = NULL;
 	CFIndex			count = 0;
 	CFStringRef		global_setup_v4_key = NULL;

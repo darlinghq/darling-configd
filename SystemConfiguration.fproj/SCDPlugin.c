@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2006, 2013, 2015 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2002-2006, 2013, 2015, 2017, 2018 Apple Computer, Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -110,6 +110,7 @@ unblockSignal()
 static void
 reaper(int sigraised)
 {
+#pragma unused(sigraised)
 	/*
 	 * block additional SIGCHLD's until current children have
 	 * been reaped.
@@ -129,6 +130,10 @@ reaper(int sigraised)
 static void
 childrenReaped(CFMachPortRef port, void *msg, CFIndex size, void *info)
 {
+#pragma unused(port)
+#pragma unused(msg)
+#pragma unused(size)
+#pragma unused(info)
 	pid_t		pid		= 0;
 	childInfoRef	reapedChildren	= NULL;
 
@@ -214,12 +219,13 @@ childrenReaped(CFMachPortRef port, void *msg, CFIndex size, void *info)
 static CFStringRef
 childReapedMPCopyDescription(const void *info)
 {
+#pragma unused(info)
 	return CFStringCreateWithFormat(NULL, NULL, CFSTR("<SIGCHLD MP>"));
 }
 
 
 void
-_SCDPluginExecInit()
+_SCDPluginExecInit(void)
 {
 	struct sigaction	act;
 	CFMachPortContext	context	= { 0
@@ -379,7 +385,7 @@ _SCDPluginExecCommand2(SCDPluginExecCallBack	callout,
 
 				// create child process info
 				child = CFAllocatorAllocate(NULL, sizeof(struct childInfo), 0);
-				bzero(child, sizeof(struct childInfo));
+				memset(child, 0, sizeof(struct childInfo));
 				child->pid     = pid;
 				child->callout = callout;
 				child->context = context;

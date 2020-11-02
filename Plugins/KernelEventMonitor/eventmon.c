@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -54,14 +54,14 @@
  */
 
 #include "eventmon.h"
-#include "cache.h"
 #include "ev_dlil.h"
 #include "ev_ipv4.h"
 #include "ev_ipv6.h"
 #include <notify.h>
 #include <sys/sysctl.h>
 #include <sys/kern_event.h>
-#include <network/config.h>
+#include <nw/private.h>
+#include <netinet6/nd6.h>
 
 static dispatch_queue_t			S_kev_queue;
 static dispatch_source_t		S_kev_source;
@@ -71,7 +71,7 @@ __private_extern__ Boolean		_verbose		= FALSE;
 
 
 __private_extern__ os_log_t
-__log_KernelEventMonitor()
+__log_KernelEventMonitor(void)
 {
     static os_log_t	log	= NULL;
 
@@ -178,58 +178,6 @@ dgram_socket(int domain)
     return s;
 }
 
-static int
-ifflags_set(int s, char * name, short flags)
-{
-    struct ifreq	ifr;
-    int 		ret;
-
-    bzero(&ifr, sizeof(ifr));
-    strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
-    ret = ioctl(s, SIOCGIFFLAGS, (caddr_t)&ifr);
-    if (ret == -1) {
-		return (ret);
-    }
-    ifr.ifr_flags |= flags;
-    return (ioctl(s, SIOCSIFFLAGS, &ifr));
-}
-
-static int
-ifflags_clear(int s, char * name, short flags)
-{
-    struct ifreq	ifr;
-    int 		ret;
-
-    bzero(&ifr, sizeof(ifr));
-    strlcpy(ifr.ifr_name, name, sizeof(ifr.ifr_name));
-    ret = ioctl(s, SIOCGIFFLAGS, (caddr_t)&ifr);
-    if (ret == -1) {
-		return (ret);
-    }
-    ifr.ifr_flags &= ~flags;
-    return (ioctl(s, SIOCSIFFLAGS, &ifr));
-}
-
-static void
-mark_if_up(char * name)
-{
-	int s = dgram_socket(AF_INET);
-	if (s == -1)
-		return;
-	ifflags_set(s, name, IFF_UP);
-	close(s);
-}
-
-static void
-mark_if_down(char * name)
-{
-	int s = dgram_socket(AF_INET);
-	if (s == -1)
-		return;
-	ifflags_clear(s, name, IFF_UP);
-	close(s);
-}
-
 static void
 post_network_changed(void)
 {
@@ -250,8 +198,8 @@ post_network_changed(void)
 static void
 logEvent(CFStringRef evStr, struct kern_event_msg *ev_msg)
 {
-	int	i;
-	int	j;
+	int	    i;
+	uint32_t    j;
 
 	if (!_verbose) {
 		return;
@@ -282,10 +230,10 @@ static uint8_t info_zero[DLIL_MODARGLEN];
 static void
 processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 {
-	int				dataLen = (ev_msg->total_size - KEV_MSG_HEADER_SIZE);
-	void *				event_data = &ev_msg->event_data[0];
-	Boolean				handled = TRUE;
-	char				ifr_name[IFNAMSIZ];
+	size_t	    dataLen	= (ev_msg->total_size - KEV_MSG_HEADER_SIZE);
+	void *	    event_data	= &ev_msg->event_data[0];
+	char	    ifr_name[IFNAMSIZ];
+	Boolean	    handled	= TRUE;
 
 	switch (ev_msg->kev_subclass) {
 		case KEV_INET_SUBCLASS : {
@@ -384,7 +332,6 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 				case KEV_INET6_ADDR_DELETED :
 				case KEV_INET6_NEW_LL_ADDR :
 				case KEV_INET6_NEW_RTADV_ADDR :
-				case KEV_INET6_DEFROUTER :
 					if (dataLen < sizeof(*ev)) {
 						handled = FALSE;
 						break;
@@ -403,6 +350,16 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 					    != KEV_INET6_ADDR_DELETED) {
 						check_interface_link_status(ifr_name);
 					}
+					break;
+
+				case KEV_INET6_REQUEST_NAT64_PREFIX :
+					if (dataLen < sizeof(*ev)) {
+						handled = FALSE;
+						break;
+					}
+					copy_if_name(&ev->link_data, ifr_name, sizeof(ifr_name));
+					SC_log(LOG_INFO, "Process NAT64 prefix request: %s", (char *)ifr_name);
+					nat64_prefix_request(ifr_name);
 					break;
 
 				default :
@@ -466,15 +423,11 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 					}
 					copy_if_name(&protoEvent->link_data,
 						     ifr_name, sizeof(ifr_name));
-					SC_log(LOG_INFO, "Process protocol %s: %s (n=%d)",
+					SC_log(LOG_INFO, "Process protocol %s: %s (pf=%d, n=%d)",
 						 (ev_msg->event_code == KEV_DL_PROTO_ATTACHED) ? "attach" : "detach",
 						 (char *)ifr_name,
+						 protoEvent->proto_family,
 						 protoEvent->proto_remaining_count);
-					if (protoEvent->proto_remaining_count == 0) {
-						mark_if_down(ifr_name);
-					} else {
-						mark_if_up(ifr_name);
-					}
 					break;
 				}
 
@@ -493,6 +446,20 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 					break;
 				}
 #endif	// KEV_DL_IF_IDLE_ROUTE_REFCNT
+
+				case KEV_DL_IFDELEGATE_CHANGED: {
+					/*
+					 * interface delegation changed
+					 */
+					if (dataLen < sizeof(*ev)) {
+						handled = FALSE;
+						break;
+					}
+					copy_if_name(ev, ifr_name, sizeof(ifr_name));
+					SC_log(LOG_INFO, "Process interface delegation change: %s", (char *)ifr_name);
+					interface_update_delegation(ifr_name);
+					break;
+				}
 
 				case KEV_DL_LINK_OFF :
 				case KEV_DL_LINK_ON :
@@ -527,7 +494,7 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 								   lqm_data->link_quality_metric);
 					break;
 				}
-#endif  // KEV_DL_LINK_QUALITY_METRIC_CHANGED
+#endif	// KEV_DL_LINK_QUALITY_METRIC_CHANGED
 
 #ifdef	KEV_DL_ISSUES
 				case KEV_DL_ISSUES: {
@@ -573,6 +540,33 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 
 #ifdef	KEV_ND6_SUBCLASS
 		case KEV_ND6_SUBCLASS : {
+			struct kev_nd6_event * ev;
+
+			ev = (struct kev_nd6_event *)event_data;
+			switch (ev_msg->event_code) {
+			case KEV_ND6_ADDR_DETACHED :
+			case KEV_ND6_ADDR_DEPRECATED :
+			case KEV_ND6_ADDR_EXPIRED :
+				if (dataLen < sizeof(*ev)) {
+					handled = FALSE;
+					break;
+				}
+				copy_if_name(&ev->link_data, ifr_name, sizeof(ifr_name));
+				SC_log(LOG_INFO, "Process ND6 address change: %s: %d", (char *)ifr_name, ev_msg->event_code);
+				interface_update_ipv6(NULL, ifr_name);
+				break;
+			case KEV_ND6_RTR_EXPIRED :
+				if (dataLen < sizeof(*ev)) {
+					handled = FALSE;
+					break;
+				}
+				copy_if_name(&ev->link_data, ifr_name, sizeof(ifr_name));
+				SC_log(LOG_INFO, "Process IPv6 router expired: %s: %d", (char *)ifr_name, ev_msg->event_code);
+				ipv6_router_expired(ifr_name);
+				break;
+			default :
+				break;
+			}
 			break;
 		}
 #endif	// KEV_ND6_SUBCLASS
@@ -614,13 +608,13 @@ processEvent_Apple_Network(struct kern_event_msg *ev_msg)
 static Boolean
 eventCallback(int so)
 {
-	ssize_t			status;
 	union {
 		char			bytes[1024];
 		struct kern_event_msg	ev_msg1;	// first kernel event
 	} buf;
 	struct kern_event_msg	*ev_msg		= &buf.ev_msg1;
 	ssize_t			offset		= 0;
+	ssize_t			status;
 
 	status = recv(so, &buf, sizeof(buf), 0);
 	if (status == -1) {
@@ -628,10 +622,10 @@ eventCallback(int so)
 		return FALSE;
 	}
 
-	cache_open();
+	_SCDynamicStoreCacheOpen(store);
 
 	while (offset < status) {
-		if ((offset + ev_msg->total_size) > status) {
+		if ((offset + (ssize_t)ev_msg->total_size) > status) {
 			SC_log(LOG_NOTICE, "missed SYSPROTO_EVENT event, buffer not big enough");
 			break;
 		}
@@ -654,8 +648,8 @@ eventCallback(int so)
 		ev_msg = (struct kern_event_msg *)(void *)&buf.bytes[offset];
 	}
 
-	cache_write(store);
-	cache_close();
+	_SCDynamicStoreCacheCommitChanges(store);
+	_SCDynamicStoreCacheClose(store);
 	post_network_changed();
 	messages_post();
 
@@ -751,6 +745,7 @@ schedule_timer(void)
 static void
 check_for_new_interfaces(void * context)
 {
+#pragma unused(context)
 	static int	count;
 	char		msg[32];
 
@@ -758,10 +753,10 @@ check_for_new_interfaces(void * context)
 
 	/* update KEV driven content in case a message got dropped */
 	snprintf(msg, sizeof(msg), "update %d (of %d)", count, MAX_TIMER_COUNT);
-	cache_open();
+	_SCDynamicStoreCacheOpen(store);
 	update_interfaces(msg, FALSE);
-	cache_write(store);
-	cache_close();
+	_SCDynamicStoreCacheCommitChanges(store);
+	_SCDynamicStoreCacheClose(store);
 	messages_post();
 
 	/* schedule the next timer, if needed */
@@ -780,11 +775,11 @@ prime(void)
 {
 	SC_log(LOG_DEBUG, "prime() called");
 
-	cache_open();
+	_SCDynamicStoreCacheOpen(store);
 	messages_init();
 	update_interfaces("prime", TRUE);
-	cache_write(store);
-	cache_close();
+	_SCDynamicStoreCacheCommitChanges(store);
+	_SCDynamicStoreCacheClose(store);
 
 	network_changed = TRUE;
 	post_network_changed();
@@ -884,21 +879,13 @@ load_KernelEventMonitor(CFBundleRef bundle, Boolean bundleVerbose)
 		close(so);
 	});
 	dispatch_source_set_event_handler(S_kev_source, ^{
-		os_activity_t	activity;
 		Boolean		ok;
-
-		activity = os_activity_create("processing network kernel events",
-					      OS_ACTIVITY_CURRENT,
-					      OS_ACTIVITY_FLAG_DEFAULT);
-		os_activity_scope(activity);
 
 		ok = eventCallback(so);
 		if (!ok) {
 			SC_log(LOG_ERR, "kernel event monitor disabled");
 			dispatch_source_cancel(S_kev_source);
 		}
-
-		os_release(activity);
 	});
 	// NOTE: dispatch_resume() will be called in prime()
 

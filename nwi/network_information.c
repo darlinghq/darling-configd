@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2011-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2011-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -28,7 +28,6 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <dispatch/dispatch.h>
-#include <os/activity.h>
 #include <os/log.h>
 #include <xpc/xpc.h>
 
@@ -58,22 +57,6 @@ static const char *	client_proc_name = NULL;
 // Note: protected by __nwi_client_queue()
 static int			nwi_active	= 0;
 static libSC_info_client_t	*nwi_client	= NULL;
-
-
-static os_activity_t
-__nwi_client_activity()
-{
-	static os_activity_t	activity;
-	static dispatch_once_t  once;
-
-	dispatch_once(&once, ^{
-		activity = os_activity_create("accessing network information",
-					      OS_ACTIVITY_CURRENT,
-					      OS_ACTIVITY_FLAG_DEFAULT);
-	});
-
-	return activity;
-}
 
 
 static dispatch_queue_t
@@ -229,9 +212,6 @@ _nwi_state_copy_data()
 		return NULL;
 	}
 
-	// scope NWI activity
-	os_activity_scope(__nwi_client_activity());
-
 	// create message
 	reqdict = xpc_dictionary_create(NULL, NULL, 0);
 
@@ -254,7 +234,7 @@ _nwi_state_copy_data()
 		dataRef = xpc_dictionary_get_data(reply, NWI_CONFIGURATION, &dataLen);
 		if (dataRef != NULL) {
 			nwi_state = malloc(dataLen);
-			bcopy((void *)dataRef, nwi_state, dataLen);
+			memcpy(nwi_state, (void *)dataRef, dataLen);
 			if (nwi_state->version != NWI_STATE_VERSION) {
 				/* make sure the version matches */
 				nwi_state_free(nwi_state);
@@ -291,9 +271,6 @@ _nwi_config_agent_copy_data(const struct netagent *agent, uint64_t *length)
 
 	_nwi_client_init();
 
-	// scope NWI activity
-	os_activity_scope(__nwi_client_activity());
-
 	reqdict = xpc_dictionary_create(NULL, NULL, 0);
 
 	xpc_dictionary_set_int64(reqdict, NWI_REQUEST, NWI_CONFIG_AGENT_REQUEST_COPY);
@@ -316,7 +293,7 @@ _nwi_config_agent_copy_data(const struct netagent *agent, uint64_t *length)
 		if ((xpc_buffer != NULL) && (len > 0)) {
 			buffer = malloc(len);
 			*length = len;
-			bcopy((void *)xpc_buffer, (void *)buffer, len);
+			memcpy((void *)buffer, (void *)xpc_buffer, len);
 		}
 		xpc_release(reply);
 	}
@@ -399,6 +376,7 @@ nwi_state_copy(void)
 void
 _nwi_state_ack(nwi_state_t state, const char *bundle_id)
 {
+#pragma unused(bundle_id)
 	xpc_object_t	reqdict;
 
 	if (state == NULL) {
@@ -489,12 +467,17 @@ nwi_ifstate_get_flags(nwi_ifstate_t ifstate)
 	flags |= flags_from_af(ifstate->af);
 	if ((ifstate->flags & NWI_IFSTATE_FLAGS_HAS_DNS) != 0) {
 		flags |= NWI_IFSTATE_FLAGS_HAS_DNS;
-
+	}
+	if ((ifstate->flags & NWI_IFSTATE_FLAGS_HAS_CLAT46) != 0) {
+		flags |= NWI_IFSTATE_FLAGS_HAS_CLAT46;
 	}
 	if (alias != NULL) {
 		flags |= flags_from_af(alias->af);
 		if ((alias->flags & NWI_IFSTATE_FLAGS_HAS_DNS) != 0) {
 			flags |= NWI_IFSTATE_FLAGS_HAS_DNS;
+		}
+		if ((alias->flags & NWI_IFSTATE_FLAGS_HAS_CLAT46) != 0) {
+			flags |= NWI_IFSTATE_FLAGS_HAS_CLAT46;
 		}
 	}
 	return flags;
@@ -894,13 +877,15 @@ nwi_ifstate_print(nwi_ifstate_t ifstate)
 						sizeof(vpn_ntopbuf));
 	}
 	diff_str = nwi_ifstate_get_diff_str(ifstate);
-	printf("%s%s%s%s rank 0x%x iaddr %s%s%s reach_flags 0x%x\n",
+	printf("%s%s%s%s%s rank 0x%x iaddr %s%s%s reach_flags 0x%x\n",
 	       ifstate->ifname,
 	       diff_str,
 	       (ifstate->flags & NWI_IFSTATE_FLAGS_HAS_DNS) != 0
-	       ? " dns" : "",
+			? " dns" : "",
+	       (ifstate->flags & NWI_IFSTATE_FLAGS_HAS_CLAT46) != 0
+			? " clat46" : "",
 	       (ifstate->flags & NWI_IFSTATE_FLAGS_NOT_IN_LIST) != 0
-	       ? " never" : "",
+			? " never" : "",
 	       ifstate->rank,
 	       addr_str,
 	       (vpn_addr_str != NULL) ? " vpn_server_addr: " : "",
@@ -1034,7 +1019,7 @@ doit(void)
 	state = nwi_state_new(state, 10);
 	nwi_state_print(state);
 
-	bzero(&addr6, sizeof(addr6));
+	memset(&addr6, 0, sizeof(addr6));
 	/* populate old_state */
 	old_state = nwi_state_new(NULL, 5);
 	for (int i = 0; i < 5; i++) {

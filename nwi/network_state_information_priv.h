@@ -1,15 +1,15 @@
 /*
- * Copyright (c) 2011-2013, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2011-2013, 2016-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
- * 
+ *
  * This file contains Original Code and/or Modifications of Original Code
  * as defined in and that are subject to the Apple Public Source License
  * Version 2.0 (the 'License'). You may not use this file except in
  * compliance with the License. Please obtain a copy of the License at
  * http://www.opensource.apple.com/apsl/ and read it before using this
  * file.
- * 
+ *
  * The Original Code and all software distributed under the License are
  * distributed on an 'AS IS' basis, WITHOUT WARRANTY OF ANY KIND, EITHER
  * EXPRESS OR IMPLIED, AND APPLE HEREBY DISCLAIMS ALL SUCH WARRANTIES,
@@ -17,7 +17,7 @@
  * FITNESS FOR A PARTICULAR PURPOSE, QUIET ENJOYMENT OR NON-INFRINGEMENT.
  * Please see the License for the specific language governing rights and
  * limitations under the License.
- * 
+ *
  * @APPLE_LICENSE_HEADER_END@
  */
 
@@ -34,13 +34,16 @@
 
 #include "network_information.h"
 
+#define NWI_STATE_VERSION	((uint32_t)0x20170601)
+
+
 #define NWI_IFSTATE_FLAGS_NOT_IN_LIST	0x0008
 #define NWI_IFSTATE_FLAGS_HAS_SIGNATURE	0x0010
 #define NWI_IFSTATE_FLAGS_NOT_IN_IFLIST	0x0020
 
 /*
  * NWI_IFSTATE_FLAGS_MASK
- * - these are the bits that get preserved, all others are 
+ * - these are the bits that get preserved, all others are
  *   control (last item, diff)
  */
 #define NWI_IFSTATE_FLAGS_MASK		0x00ff
@@ -56,8 +59,33 @@ typedef enum {
 } nwi_ifstate_difference_t;
 
 
+/*
+ * Type: Rank
+ * Purpose:
+ *   A 32-bit value to encode the relative rank of a service.
+ *
+ *   The top 8 bits are used to hold the rank assertion (first, default, last,
+ *   never, scoped);
+ *
+ *   The bottom 24 bits are used to store the service index (i.e. the
+ *   position within the service order array).
+ */
 typedef uint32_t        Rank;
+#define RANK_ASSERTION_MAKE(r)		((Rank)(r) << 24)		// rank assertion (top 8 bits)
+#define kRankAssertionFirst		RANK_ASSERTION_MAKE(0)
+#define kRankAssertionDefault		RANK_ASSERTION_MAKE(1)
+#define kRankAssertionLast		RANK_ASSERTION_MAKE(2)
+#define kRankAssertionNever		RANK_ASSERTION_MAKE(3)
+#define kRankAssertionScoped		RANK_ASSERTION_MAKE(4)
+#define kRankAssertionMask		RANK_ASSERTION_MAKE(0xff)
+#define RANK_ASSERTION_MASK(r)		((Rank)(r) & kRankAssertionMask)
+#define RANK_INDEX_MAKE(r)		((Rank)(r))			// rank index (bottom 24 bits)
+#define kRankIndexMask			RANK_INDEX_MAKE(0xffffff)
+#define RANK_INDEX_MASK(r)		((Rank)(r) & kRankIndexMask)
+
 typedef int32_t		nwi_ifindex_t;
+
+#define NWI_SIGNATURE_LENGTH	20
 
 #pragma pack(4)
 typedef struct _nwi_ifstate {
@@ -76,11 +104,9 @@ typedef struct _nwi_ifstate {
 	    struct sockaddr_in	vpn_server_address4;
 	    struct sockaddr_in6	vpn_server_address6;
 	} vpn_server_address;
-	unsigned char		signature[CC_SHA1_DIGEST_LENGTH];
+	unsigned char		signature[NWI_SIGNATURE_LENGTH];
 } nwi_ifstate;
 #pragma pack()
-
-#define NWI_STATE_VERSION	((uint32_t)0x20150214)
 
 #pragma pack(4)
 typedef struct _nwi_state {
@@ -254,8 +280,7 @@ _nwi_ifstate_set_vpn_server(nwi_ifstate_t ifstate, struct sockaddr *serv_addr)
 	size_t len;
 
 	if (serv_addr == NULL) {
-		bzero(&ifstate->vpn_server_address,
-		      sizeof(ifstate->vpn_server_address));
+		memset(&ifstate->vpn_server_address, 0, sizeof(ifstate->vpn_server_address));
 		return;
 	}
 
@@ -324,10 +349,7 @@ void
 _nwi_state_update_interface_generations(nwi_state_t old_state, nwi_state_t state, nwi_state_t changes);
 
 void
-_nwi_state_force_refresh();
+_nwi_state_compute_sha256_hash(nwi_state_t state,
+			       unsigned char hash[CC_SHA256_DIGEST_LENGTH]);
 
-void
-_nwi_state_compute_sha1_hash(nwi_state_t state,
-			     unsigned char hash[CC_SHA1_DIGEST_LENGTH]);
-
-#endif // _NETWORK_STATE_INFORMATION_PRIV_H_
+#endif	// _NETWORK_STATE_INFORMATION_PRIV_H_

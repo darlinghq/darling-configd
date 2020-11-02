@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2004, 2006, 2008, 2011, 2012, 2014-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2004, 2006, 2008, 2011, 2012, 2014-2017, 2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -42,6 +42,7 @@ int
 __SCDynamicStoreSetValue(SCDynamicStoreRef store, CFStringRef key, CFDataRef value, Boolean internal)
 {
 	CFDictionaryRef			dict;
+	serverSessionRef		mySession;
 	CFMutableDictionaryRef		newDict;
 	Boolean				newEntry	= FALSE;
 	int				sc_status	= kSCStatusOK;
@@ -77,46 +78,29 @@ __SCDynamicStoreSetValue(SCDynamicStoreRef store, CFStringRef key, CFDataRef val
 	newEntry = !CFDictionaryContainsKey(newDict, kSCDData);
 	CFDictionarySetValue(newDict, kSCDData, value);
 
-	sessionKey = CFStringCreateWithFormat(NULL, NULL, CFSTR("%d"), storePrivate->server);
-
 	/*
 	 * Manage per-session keys.
 	 */
+	sessionKey = CFStringCreateWithFormat(NULL, NULL, CFSTR("%d"), storePrivate->server);
 	if (storePrivate->useSessionKeys) {
 		if (newEntry) {
-			CFArrayRef		keys;
-			CFMutableDictionaryRef	newSession;
-			CFMutableArrayRef	newKeys;
-			CFDictionaryRef		session;
-
 			/*
 			 * Add this key to my list of per-session keys
 			 */
-			session = CFDictionaryGetValue(sessionData, sessionKey);
-			keys = CFDictionaryGetValue(session, kSCDSessionKeys);
-			if ((keys == NULL) ||
-			    (CFArrayGetFirstIndexOfValue(keys,
-							 CFRangeMake(0, CFArrayGetCount(keys)),
-							 key) == kCFNotFound)) {
+			mySession = getSession(storePrivate->server);
+			if ((mySession->sessionKeys == NULL) ||
+			    !CFArrayContainsValue(mySession->sessionKeys,
+						  CFRangeMake(0, CFArrayGetCount(mySession->sessionKeys)),
+						  key)) {
 				/*
 				 * if no session keys defined "or" keys defined but not
 				 * this one...
 				 */
-				if (keys != NULL) {
-					/* this is the first session key */
-					newKeys = CFArrayCreateMutableCopy(NULL, 0, keys);
-				} else {
+				if (mySession->sessionKeys == NULL) {
 					/* this is an additional session key */
-					newKeys = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+					mySession->sessionKeys = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
 				}
-				CFArrayAppendValue(newKeys, key);
-
-				/* update session dictionary */
-				newSession = CFDictionaryCreateMutableCopy(NULL, 0, session);
-				CFDictionarySetValue(newSession, kSCDSessionKeys, newKeys);
-				CFRelease(newKeys);
-				CFDictionarySetValue(sessionData, sessionKey, newSession);
-				CFRelease(newSession);
+				CFArrayAppendValue(mySession->sessionKeys, key);
 			}
 
 			/*
@@ -161,7 +145,6 @@ __SCDynamicStoreSetValue(SCDynamicStoreRef store, CFStringRef key, CFDataRef val
 			CFRelease(removedKey);
 		}
 	}
-
 	CFRelease(sessionKey);
 
 	/*
@@ -217,10 +200,12 @@ _configset(mach_port_t			server,
 	   int				*sc_status,
 	   audit_token_t		audit_token)
 {
+#pragma unused(oldInstance)
 	CFDataRef		data		= NULL;	/* data (un-serialized) */
 	CFStringRef		key		= NULL;	/* key  (un-serialized) */
 	serverSessionRef	mySession;
 
+	*newInstance = 0;
 	*sc_status = kSCStatusOK;
 
 	/* un-serialize the key */
@@ -252,13 +237,12 @@ _configset(mach_port_t			server,
 		}
 	}
 
-	if (!hasWriteAccess(mySession, key)) {
+	if (!hasWriteAccess(mySession, "set", key)) {
 		*sc_status = kSCStatusAccessError;
 		goto done;
 	}
 
 	*sc_status = __SCDynamicStoreSetValue(mySession->store, key, data, FALSE);
-	*newInstance = 0;
 
     done :
 
@@ -452,7 +436,7 @@ _configset_m(mach_port_t		server,
 			CFStringRef	key;
 
 			key = (CFStringRef)keys[i];
-			if (!hasWriteAccess(mySession, key)) {
+			if (!hasWriteAccess(mySession, "set (multiple)", key)) {
 				writeOK = FALSE;
 				break;
 			}
@@ -475,7 +459,7 @@ _configset_m(mach_port_t		server,
 			CFStringRef	key;
 
 			key = CFArrayGetValueAtIndex(remove, i);
-			if (!hasWriteAccess(mySession, key)) {
+			if (!hasWriteAccess(mySession, "set/remove (multiple)", key)) {
 				*sc_status = kSCStatusAccessError;
 				goto done;
 			}
@@ -490,7 +474,7 @@ _configset_m(mach_port_t		server,
 			CFStringRef	key;
 
 			key = CFArrayGetValueAtIndex(notify, i);
-			if (!hasWriteAccess(mySession, key)) {
+			if (!hasWriteAccess(mySession, "set/notify (multiple)", key)) {
 				*sc_status = kSCStatusAccessError;
 				goto done;
 			}

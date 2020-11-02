@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2016-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -35,13 +35,14 @@
 #include <net/if.h>
 #include <net/if_types.h>
 #include <net/necp.h>
+#include <os/overflow.h>
 #include <sys/ioctl.h>
 #include <sys/kern_control.h>
 #include <sys/socket.h>
 #include <sys/sockio.h>
 #include <sys/sys_domain.h>
 
-#define	SC_LOG_HANDLE	__log_QoSMarking()
+#define	SC_LOG_HANDLE	__log_QoSMarking
 #include <SystemConfiguration/SystemConfiguration.h>
 #include <SystemConfiguration/SCPrivate.h>
 #include <SystemConfiguration/SCValidation.h>
@@ -72,7 +73,7 @@ static NSArray *	qosMarkingAudioVideoCalls_executablePaths	= nil;
 
 
 __private_extern__ os_log_t
-__log_QoSMarking()
+__log_QoSMarking(void)
 {
 	static os_log_t	log	= NULL;
 
@@ -132,19 +133,27 @@ supportsQoSMarking(int s, const char *ifname)
 {
 	struct ifreq	ifr;
 
-	bzero(&ifr, sizeof(ifr));
+	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	if (ioctl(s, SIOCGIFTYPE, (caddr_t)&ifr) == -1) {
-		SC_log(LOG_NOTICE, "%s: ioctl(SIOCGIFTYPE) failed: %m", ifname);
+		SC_log(LOG_NOTICE, "%s: ioctl(SIOCGIFTYPE) failed: %s",
+		       ifname,
+		       strerror(errno));
 		ifr.ifr_type.ift_type = 0;
 		ifr.ifr_type.ift_family = IFRTYPE_FAMILY_ANY;
 		ifr.ifr_type.ift_subfamily = IFRTYPE_SUBFAMILY_ANY;
 	}
 
+#if	!TARGET_OS_IPHONE
+	if (ifr.ifr_type.ift_family == IFRTYPE_FAMILY_ETHERNET) {
+		return true;
+	}
+#else	// !TARGET_OS_IPHONE
 	if ((ifr.ifr_type.ift_family == IFRTYPE_FAMILY_ETHERNET) &&
 	    (ifr.ifr_type.ift_subfamily == IFRTYPE_SUBFAMILY_WIFI)) {
 		return true;
 	}
+#endif	// !TARGET_OS_IPHONE
 
 	return false;
 }
@@ -156,7 +165,7 @@ qosMarkingSetEnabled(int s, const char *ifname, BOOL enabled)
 	struct ifreq	ifr;
 	int		ret;
 
-	bzero(&ifr, sizeof(ifr));
+	memset(&ifr, 0, sizeof(ifr));
 	strlcpy(ifr.ifr_name, ifname, sizeof(ifr.ifr_name));
 	ifr.ifr_qosmarking_enabled = enabled ? 1 : 0;
 	ret = ioctl(s, SIOCSQOSMARKINGENABLED, &ifr);
@@ -227,55 +236,7 @@ qosMarkingSetEnabled(int s, const char *ifname, BOOL enabled)
 
 - (NEPolicySession *)createPolicySession
 {
-	NEPolicySession *session	= nil;
-#if	!TARGET_OS_IPHONE
-	/*
-	 * Note: we cannot have entitlements on OSX so we open a kernel
-	 *       control socket and use it to create a policy session
-	 */
-
-	struct sockaddr_ctl	kernctl_addr;
-	struct ctl_info		kernctl_info;
-	int			sock;
-
-	// Create kernel control socket
-	sock = socket(PF_SYSTEM, SOCK_DGRAM, SYSPROTO_CONTROL);
-	if (sock == -1) {
-		SC_log(LOG_ERR, "socket() failed: %s", strerror(errno));
-		return nil;
-	}
-
-	bzero(&kernctl_info, sizeof(kernctl_info));
-	strlcpy(kernctl_info.ctl_name, NECP_CONTROL_NAME, sizeof(kernctl_info.ctl_name));
-	if (ioctl(sock, CTLIOCGINFO, &kernctl_info)) {
-		SC_log(LOG_ERR, "ioctl() failed: %s", strerror(errno));
-		close(sock);
-		return nil;
-	}
-
-	bzero(&kernctl_addr, sizeof(kernctl_addr));
-	kernctl_addr.sc_len = sizeof(kernctl_addr);
-	kernctl_addr.sc_family = AF_SYSTEM;
-	kernctl_addr.ss_sysaddr = AF_SYS_CONTROL;
-	kernctl_addr.sc_id = kernctl_info.ctl_id;
-	kernctl_addr.sc_unit = 0;
-	if (connect(sock, (struct sockaddr *)&kernctl_addr, sizeof(kernctl_addr))) {
-		SC_log(LOG_ERR, "connect() failed: %s", strerror(errno));
-		close(sock);
-		return nil;
-	}
-
-	/* Create policy session */
-	session = [[NEPolicySession alloc] initWithSocket:sock];
-	if (session == nil) {
-		close(sock);
-	}
-
-#else	// !TARGET_OS_IPHONE
-	session = [[NEPolicySession alloc] init];
-#endif	// !TARGET_OS_IPHONE
-
-	return session;
+	return [[NEPolicySession alloc] init];
 }
 
 
@@ -342,6 +303,7 @@ qosMarkingSetEnabled(int s, const char *ifname, BOOL enabled)
 
 - (NSUUID *)copyUUIDForSingleArch:(int)fd
 {
+	uint64_t		bytes	= 0;
 	struct mach_header	header;
 	NSUUID *		uuid	= nil;
 
@@ -355,6 +317,14 @@ qosMarkingSetEnabled(int s, const char *ifname, BOOL enabled)
 			SC_log(LOG_ERR, "could not lseek() past 64 bit header");
 			return nil;
 		}
+	}
+
+	if(os_mul_overflow((uint64_t)header.ncmds, sizeof(struct load_command), &bytes) ||
+	   (bytes > header.sizeofcmds)) {
+		SC_log(LOG_ERR, "mach_header error with \".ncmds\" (%llu), \".sizeofcmds\" (%llu)",
+		       (uint64_t)header.ncmds,
+		       (uint64_t)header.sizeofcmds);
+		return nil;
 	}
 
 	// Find LC_UUID in the load commands
@@ -399,7 +369,7 @@ qosMarkingSetEnabled(int s, const char *ifname, BOOL enabled)
 	NSMutableArray *	uuids		= nil;
 
 	// For a fat architecture, we need find the section that is closet to the host cpu
-	bzero(&hostinfo, sizeof(hostinfo));
+	memset(&hostinfo, 0, sizeof(hostinfo));
 	count = HOST_BASIC_INFO_COUNT;
 	kr = host_info(mach_host_self(), HOST_BASIC_INFO, (host_info_t)&hostinfo, &count);
 	if (kr != KERN_SUCCESS) {
@@ -613,6 +583,7 @@ qosMarkingSetEnabled(int s, const char *ifname, BOOL enabled)
 		uuids = [NSMutableArray array];
 
 		xpc_array_apply(mapping, ^bool(size_t index, xpc_object_t value) {
+#pragma unused(index)
 			if ((value != NULL) &&
 			    (xpc_get_type(value) == XPC_TYPE_UUID)) {
 				NSUUID *	uuid;
@@ -1074,15 +1045,10 @@ parse_component(CFStringRef key, CFStringRef prefix)
 static void
 qosMarkingConfigChangedCallback(SCDynamicStoreRef store, CFArrayRef changedKeys, void *arg)
 {
-	os_activity_t		activity;
+#pragma unused(arg)
 	CFDictionaryRef		changes;
 	CFIndex			n;
 	static CFStringRef	prefix		= NULL;
-
-	activity = os_activity_create("processing QoS marking configuration changes",
-				      OS_ACTIVITY_CURRENT,
-				      OS_ACTIVITY_FLAG_DEFAULT);
-	os_activity_scope(activity);
 
 	if (prefix == NULL) {
 		prefix = SCDynamicStoreKeyCreate(NULL,
@@ -1145,10 +1111,21 @@ qosMarkingConfigChangedCallback(SCDynamicStoreRef store, CFArrayRef changedKeys,
 }
 
 
+static Boolean
+haveNetworkExtensionFramework()
+{
+	Boolean	haveFramework;
+
+	haveFramework = ([NEPolicy class] != nil);
+	return haveFramework;
+}
+
+
 __private_extern__
 void
 load_QoSMarking(CFBundleRef bundle, Boolean bundleVerbose)
 {
+#pragma unused(bundleVerbose)
 	CFDictionaryRef		dict;
 	CFStringRef		key;
 	CFMutableArrayRef	keys;
@@ -1159,6 +1136,10 @@ load_QoSMarking(CFBundleRef bundle, Boolean bundleVerbose)
 
 	SC_log(LOG_DEBUG, "load() called");
 	SC_log(LOG_DEBUG, "  bundle ID = %@", CFBundleGetIdentifier(bundle));
+
+	if (!haveNetworkExtensionFramework()) {
+		return;
+	}
 
 	// initialize a few globals
 	interfacesKey = SCDynamicStoreKeyCreateNetworkInterface(NULL,

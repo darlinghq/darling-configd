@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2009-2018 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -80,14 +80,14 @@ ifbifconf_copy(int s, const char * ifname)
 	struct ifdrv		ifd;
 	uint32_t		len	= sizeof(struct ifbreq) * 16;
 
-	bzero(&ifd, sizeof(ifd));
+	memset(&ifd, 0, sizeof(ifd));
 	strlcpy(ifd.ifd_name, ifname, sizeof(ifd.ifd_name));
 	ifd.ifd_cmd = BRDGGIFS;
 
 	buflen = sizeof(struct ifbifconf) + len;
 	buf = malloc(buflen);
 	while (buf != NULL) {
-		bzero(buf, buflen);
+		memset(buf, 0, buflen);
 		ibc_p = (struct ifbifconf *)buf;
 		ibc_p->ifbic_len = len;
 		ibc_p->ifbic_buf = buf + sizeof(*ibc_p);
@@ -136,7 +136,7 @@ add_interface(CFMutableArrayRef *interfaces, CFStringRef if_name, SCPreferencesR
 	}
 	if (interface == NULL) {
 		interface = _SCNetworkInterfaceCreateWithBSDName(NULL, if_name,
-							 kIncludeNoVirtualInterfaces);
+								 kIncludeNoVirtualInterfaces);
 	}
 
 	if (interface != NULL) {
@@ -350,7 +350,7 @@ SCBridgeInterfaceCopyAvailableMemberInterfaces(SCPreferencesRef prefs)
 	}
 
 	// identify available interfaces
-	interfaces = __SCNetworkInterfaceCopyAll_IONetworkInterface();
+	interfaces = __SCNetworkInterfaceCopyAll_IONetworkInterface(FALSE);
 	if (interfaces != NULL) {
 		CFIndex	i;
 		CFIndex	n;
@@ -454,10 +454,8 @@ _SCBridgeInterfaceCopyActive(void)
 
 		// add member interfaces
 		if (ibc_p->ifbic_len > 0) {
-			int 		i;
-
 			// iterate over each member interface
-			for (i = 0; i < ibc_p->ifbic_len / sizeof(struct ifbreq); i++) {
+			for (size_t i = 0; i < ibc_p->ifbic_len / sizeof(struct ifbreq); i++) {
 				struct ifbreq	*ibr_p;
 				CFStringRef	member;
 
@@ -705,15 +703,36 @@ SCBridgeInterfaceSetMemberInterfaces(SCBridgeInterfaceRef bridge, CFArrayRef mem
 		return FALSE;
 	}
 
-	if ((members != NULL) && !isA_CFArray(members)) {
-		_SCErrorSet(kSCStatusInvalidArgument);
-		return FALSE;
+	if (members != NULL) {
+		CFIndex		n_members;
+
+		if (!isA_CFArray(members)) {
+			_SCErrorSet(kSCStatusInvalidArgument);
+			return FALSE;
+		}
+
+		n_members = CFArrayGetCount(members);
+		for (CFIndex i = 0; i < n_members; i++) {
+			SCNetworkInterfaceRef	member;
+			CFStringRef		memberName;
+
+			member = CFArrayGetValueAtIndex(members, i);
+			if (!isA_SCNetworkInterface(member)) {
+				_SCErrorSet(kSCStatusInvalidArgument);
+				return FALSE;
+			}
+
+			memberName = SCNetworkInterfaceGetBSDName(member);
+			if (memberName == NULL) {
+				_SCErrorSet(kSCStatusInvalidArgument);
+				return FALSE;
+			}
+		}
 	}
 
 	if (interfacePrivate->prefs != NULL) {
 		CFArrayRef	available;
 		CFArrayRef	current;
-		CFIndex		i;
 		CFIndex		n_available;
 		CFIndex		n_current;
 		CFIndex		n_members;
@@ -726,7 +745,7 @@ SCBridgeInterfaceSetMemberInterfaces(SCBridgeInterfaceRef bridge, CFArrayRef mem
 		n_available = (available != NULL) ? CFArrayGetCount(available) : 0;
 
 		n_members = (members != NULL) ? CFArrayGetCount(members) : 0;
-		for (i = 0; i < n_members; i++) {
+		for (CFIndex i = 0; i < n_members; i++) {
 			SCNetworkInterfaceRef	member;
 
 			member = CFArrayGetValueAtIndex(members, i);
@@ -930,7 +949,7 @@ __bridge_add_interface(int s, CFStringRef bridge_if, CFStringRef interface_if)
 	struct ifdrv	ifd;
 
 	// bridge interface
-	bzero(&ifd, sizeof(ifd));
+	memset(&ifd, 0, sizeof(ifd));
 	(void) _SC_cfstring_to_cstring(bridge_if,
 				       ifd.ifd_name,
 				       sizeof(ifd.ifd_name),
@@ -940,7 +959,7 @@ __bridge_add_interface(int s, CFStringRef bridge_if, CFStringRef interface_if)
 	ifd.ifd_data = (caddr_t)&breq;
 
 	// new bridge member
-	bzero(&breq, sizeof(breq));
+	memset(&breq, 0, sizeof(breq));
 	(void) _SC_cfstring_to_cstring(interface_if,
 				       breq.ifbr_ifsname,
 				       sizeof(breq.ifbr_ifsname),
@@ -968,7 +987,7 @@ __bridge_remove_interface(int s, CFStringRef bridge_if, CFStringRef interface_if
 	struct ifdrv	ifd;
 
 	// bridge interface
-	bzero(&ifd, sizeof(ifd));
+	memset(&ifd, 0, sizeof(ifd));
 	(void) _SC_cfstring_to_cstring(bridge_if,
 				       ifd.ifd_name,
 				       sizeof(ifd.ifd_name),
@@ -978,7 +997,7 @@ __bridge_remove_interface(int s, CFStringRef bridge_if, CFStringRef interface_if
 	ifd.ifd_data = (caddr_t)&breq;
 
 	// bridge member to remove
-	bzero(&breq, sizeof(breq));
+	memset(&breq, 0, sizeof(breq));
 	(void) _SC_cfstring_to_cstring(interface_if,
 				       breq.ifbr_ifsname,
 				       sizeof(breq.ifbr_ifsname),
@@ -1004,7 +1023,7 @@ __bridge_set_mac(int s, CFStringRef bridge_if, CFDataRef macAddr)
 {
 	struct ifreq	ifr;
 
-	bzero(&ifr, sizeof(ifr));
+	memset(&ifr, 0, sizeof(ifr));
 	(void) _SC_cfstring_to_cstring(bridge_if,
 				       ifr.ifr_name,
 				       sizeof(ifr.ifr_name),

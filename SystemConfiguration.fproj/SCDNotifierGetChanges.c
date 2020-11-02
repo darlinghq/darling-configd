@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2001, 2003-2005, 2009-2011, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000, 2001, 2003-2005, 2009-2011, 2016, 2017, 2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -54,8 +54,6 @@ SCDynamicStoreCopyNotifiedKeys(SCDynamicStoreRef store)
 		_SCErrorSet(kSCStatusNoStoreServer);
 		return NULL;
 	}
-
-	os_activity_scope(storePrivate->activity);
 
     retry :
 

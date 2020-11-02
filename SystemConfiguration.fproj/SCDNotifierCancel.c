@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2005, 2008-2011, 2015, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2005, 2008-2011, 2015-2017, 2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -37,7 +37,6 @@
 Boolean
 SCDynamicStoreNotifyCancel(SCDynamicStoreRef store)
 {
-	struct os_activity_scope_state_s	activity_state;
 	SCDynamicStorePrivateRef		storePrivate = (SCDynamicStorePrivateRef)store;
 	kern_return_t				status;
 	int					sc_status;
@@ -76,8 +75,6 @@ SCDynamicStoreNotifyCancel(SCDynamicStoreRef store)
 		goto done;
 	}
 
-	os_activity_scope_enter(storePrivate->activity, &activity_state);
-
 	status = notifycancel(storePrivate->server, (int *)&sc_status);
 
 	if (__SCDynamicStoreCheckRetryAndHandleError(store,
@@ -86,8 +83,6 @@ SCDynamicStoreNotifyCancel(SCDynamicStoreRef store)
 						     "SCDynamicStoreNotifyCancel notifycancel()")) {
 		sc_status = kSCStatusOK;
 	}
-
-	os_activity_scope_leave(&activity_state);
 
     done :
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2018 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -49,8 +49,7 @@
 #include "configd.h"
 #include "configd_server.h"
 #include <SystemConfiguration/SCDPlugin.h>
-#include "SCNetworkReachabilityInternal.h"
-void	_SCDPluginExecInit();
+#include "SystemConfigurationInternal.h"
 
 
 /*
@@ -79,10 +78,9 @@ static const CFStringRef	pluginWhitelist[]	= {
 	PLUGIN_ALL   ("com.apple.SystemConfiguration.InterfaceNamer"),
 	PLUGIN_ALL   ("com.apple.SystemConfiguration.KernelEventMonitor"),
 	PLUGIN_ALL   ("com.apple.SystemConfiguration.LinkConfiguration"),
-	PLUGIN_ALL   ("com.apple.SystemConfiguration.Logger"),
 	PLUGIN_ALL   ("com.apple.SystemConfiguration.PPPController"),
 	PLUGIN_ALL   ("com.apple.SystemConfiguration.PreferencesMonitor"),
-	PLUGIN_IOS   ("com.apple.SystemConfiguration.QoSMarking"),
+	PLUGIN_ALL   ("com.apple.SystemConfiguration.QoSMarking"),
 	PLUGIN_MACOSX("com.apple.print.notification"),
 };
 #define	N_PLUGIN_WHITELIST	(sizeof(pluginWhitelist) / sizeof(pluginWhitelist[0]))
@@ -95,10 +93,10 @@ typedef struct {
 	Boolean					enabled;
 	Boolean					forced;
 	Boolean					verbose;
-	SCDynamicStoreBundleLoadFunction	load;
-	SCDynamicStoreBundleStartFunction	start;
-	SCDynamicStoreBundlePrimeFunction	prime;
-	SCDynamicStoreBundleStopFunction	stop;
+	SCDynamicStoreBundleLoadFunction	*load;
+	SCDynamicStoreBundleStartFunction	*start;
+	SCDynamicStoreBundlePrimeFunction	*prime;
+	SCDynamicStoreBundleStopFunction	*stop;
 } *bundleInfoRef;
 
 
@@ -122,67 +120,63 @@ extern SCDynamicStoreBundlePrimeFunction	prime_KernelEventMonitor;
 extern SCDynamicStoreBundleLoadFunction		load_LinkConfiguration;
 extern SCDynamicStoreBundleLoadFunction		load_PreferencesMonitor;
 extern SCDynamicStoreBundlePrimeFunction	prime_PreferencesMonitor;
-#if	TARGET_OS_IPHONE
 extern SCDynamicStoreBundleLoadFunction		load_QoSMarking;
-#endif	// TARGET_OS_IPHONE
 #endif	// !TARGET_OS_SIMULATOR
 
 
 typedef struct {
-	const CFStringRef	bundleID;
-	const void		*load;		// SCDynamicStoreBundleLoadFunction
-	const void		*start;		// SCDynamicStoreBundleStartFunction
-	const void		*prime;		// SCDynamicStoreBundlePrimeFunction
-	const void		*stop;		// SCDynamicStoreBundleStopFunction
+	const CFStringRef			bundleID;
+	SCDynamicStoreBundleLoadFunction	*load;
+	SCDynamicStoreBundleStartFunction	*start;
+	SCDynamicStoreBundlePrimeFunction	*prime;
+	SCDynamicStoreBundleStopFunction	*stop;
 } builtin, *builtinRef;
 
 
 static const builtin builtin_plugins[] = {
 	{
 		CFSTR("com.apple.SystemConfiguration.IPMonitor"),
-		&load_IPMonitor,
+		load_IPMonitor,
 		NULL,
-		&prime_IPMonitor,
+		prime_IPMonitor,
 		NULL
 	},
 #if	!TARGET_OS_SIMULATOR
 	{
 		CFSTR("com.apple.SystemConfiguration.InterfaceNamer"),
-		&load_InterfaceNamer,
+		load_InterfaceNamer,
 		NULL,
 		NULL,
 		NULL
 	},
 	{
 		CFSTR("com.apple.SystemConfiguration.KernelEventMonitor"),
-		&load_KernelEventMonitor,
+		load_KernelEventMonitor,
 		NULL,
-		&prime_KernelEventMonitor,
+		prime_KernelEventMonitor,
 		NULL
 	},
 	{
 		CFSTR("com.apple.SystemConfiguration.LinkConfiguration"),
-		&load_LinkConfiguration,
+		load_LinkConfiguration,
 		NULL,
 		NULL,
 		NULL
 	},
 	{
 		CFSTR("com.apple.SystemConfiguration.PreferencesMonitor"),
-		&load_PreferencesMonitor,
+		load_PreferencesMonitor,
 		NULL,
-		&prime_PreferencesMonitor,
+		prime_PreferencesMonitor,
 		NULL
 	},
-#if	TARGET_OS_IPHONE
 	{
 		CFSTR("com.apple.SystemConfiguration.QoSMarking"),
-		&load_QoSMarking,
+		load_QoSMarking,
 		NULL,
 		NULL,
 		NULL
 	},
-#endif	// TARGET_OS_IPHONE
 #endif	// !TARGET_OS_SIMULATOR
 };
 
@@ -381,11 +375,9 @@ loadBundle(const void *value, void *context) {
 	}
 
 	if (bundleInfo->builtin) {
-		int		i;
-
 		SC_log(LOG_INFO, "adding  %@", bundleID);
 
-		for (i = 0; i < sizeof(builtin_plugins)/sizeof(builtin_plugins[0]); i++) {
+		for (size_t i = 0; i < sizeof(builtin_plugins)/sizeof(builtin_plugins[0]); i++) {
 			if (CFEqual(bundleID, builtin_plugins[i].bundleID)) {
 				bundleInfo->load  = builtin_plugins[i].load;
 				bundleInfo->start = builtin_plugins[i].start;
@@ -447,7 +439,9 @@ loadBundle(const void *value, void *context) {
 
 
 void
-callLoadFunction(const void *value, void *context) {
+callLoadFunction(const void *value, void *context)
+{
+#pragma unused(context)
 	bundleInfoRef	bundleInfo	= (bundleInfoRef)value;
 
 	if (!bundleInfo->loaded) {
@@ -473,7 +467,9 @@ callLoadFunction(const void *value, void *context) {
 
 
 void
-callStartFunction(const void *value, void *context) {
+callStartFunction(const void *value, void *context)
+{
+#pragma unused(context)
 	const char	*bundleDirName;
 	bundleInfoRef	bundleInfo	= (bundleInfoRef)value;
 	char		bundleName[MAXNAMLEN + 1];
@@ -518,7 +514,9 @@ callStartFunction(const void *value, void *context) {
 
 
 void
-callPrimeFunction(const void *value, void *context) {
+callPrimeFunction(const void *value, void *context)
+{
+#pragma unused(context)
 	bundleInfoRef	bundleInfo	= (bundleInfoRef)value;
 
 	if (!bundleInfo->loaded) {
@@ -562,12 +560,9 @@ stopComplete(void *info)
 	CFDictionaryRemoveValue(exiting, bundle);
 
 	if (CFDictionaryGetCount(exiting) == 0) {
-		int	status;
-
 		// if all of the plugins are happy
-		status = server_shutdown();
 		SC_log(LOG_INFO, "server shutdown complete (%f)", CFAbsoluteTimeGetCurrent());
-		exit (status);
+		exit (EX_OK);
 	}
 
 	return;
@@ -577,10 +572,11 @@ stopComplete(void *info)
 static void
 stopDelayed(CFRunLoopTimerRef timer, void *info)
 {
+#pragma unused(timer)
+#pragma unused(info)
 	const void	**keys;
 	CFIndex		i;
 	CFIndex		n;
-	int		status;
 
 	SC_log(LOG_INFO, "server shutdown was delayed, unresponsive plugins:");
 
@@ -601,8 +597,7 @@ stopDelayed(CFRunLoopTimerRef timer, void *info)
 	}
 	CFAllocatorDeallocate(NULL, keys);
 
-	status = server_shutdown();
-	exit (status);
+	exit (EX_OK);
 }
 
 static CFStringRef
@@ -619,7 +614,9 @@ stopRLSCopyDescription(const void *info)
 
 
 static void
-stopBundle(const void *value, void *context) {
+stopBundle(const void *value, void *context)
+{
+#pragma unused(context)
 	bundleInfoRef			bundleInfo	= (bundleInfoRef)value;
 	CFRunLoopSourceRef		stopRls;
 	CFRunLoopSourceContext		stopContext	= { 0				// version
@@ -646,9 +643,8 @@ stopBundle(const void *value, void *context) {
 	stopRls = CFRunLoopSourceCreate(NULL, 0, &stopContext);
 	CFRunLoopAddSource(CFRunLoopGetCurrent(), stopRls, kCFRunLoopDefaultMode);
 	CFDictionaryAddValue(exiting, bundleInfo->bundle, stopRls);
-	CFRelease(stopRls);
-
 	(*bundleInfo->stop)(stopRls);
+	CFRelease(stopRls);
 
 	return;
 }
@@ -670,12 +666,9 @@ stopBundles()
 			     NULL);
 
 	if (CFDictionaryGetCount(exiting) == 0) {
-		int	status;
-
 		// if all of the plugins are happy
-		status = server_shutdown();
 		SC_log(LOG_INFO, "server shutdown complete (%f)", CFAbsoluteTimeGetCurrent());
-		exit (status);
+		exit (EX_OK);
 	} else {
 		CFRunLoopTimerRef	timer;
 
@@ -707,6 +700,7 @@ stopBundles()
 static CFStringRef
 termRLSCopyDescription(const void *info)
 {
+#pragma unused(info)
 	return CFStringCreateWithFormat(NULL, NULL, CFSTR("<SIGTERM RLS>"));
 }
 
@@ -875,14 +869,13 @@ __private_extern__
 void *
 plugin_exec(void *arg)
 {
-	int		i;
 	CFIndex		nLoaded		= 0;
 
 	/* keep track of bundles */
 	allBundles = CFArrayCreateMutable(NULL, 0, NULL);
 
 	/* add white-listed plugins to those we'll allow to be loaded */
-	for (i = 0; i < N_PLUGIN_WHITELIST; i++) {
+	for (size_t i = 0; i < N_PLUGIN_WHITELIST; i++) {
 		if (pluginWhitelist[i] != NULL) {
 			CFSetSetValue(_plugins_allowed, pluginWhitelist[i]);
 		}
@@ -904,7 +897,7 @@ plugin_exec(void *arg)
 			CFArrayRef	bundles;
 			CFURLRef	url;
 
-#if	TARGET_OS_SIMULATOR
+#if	TARGET_OS_SIMULATOR && !TARGET_OS_IOSMAC
 			const char	*path_sim_prefix;
 
 			path_sim_prefix = getenv("IPHONE_SIMULATOR_ROOT");
@@ -917,7 +910,7 @@ plugin_exec(void *arg)
 			} else {
 				path[0] = '\0';
 			}
-#endif	// TARGET_OS_SIMULATOR
+#endif	// TARGET_OS_SIMULATOR && !TARGET_OS_IOSMAC
 
 			/* load any available bundle */
 			strlcat(path, BUNDLE_DIRECTORY, sizeof(path));
@@ -995,7 +988,7 @@ plugin_exec(void *arg)
 	 * Since xpcd calls getpwuid_r() during its initialization, it will
 	 * block until the platform UUID is available.
 	 */
-	for (i = 0; i < CFArrayGetCount(allBundles); i++) {
+	for (CFIndex i = 0; i < CFArrayGetCount(allBundles); i++) {
 		bundleInfoRef	bi		= (bundleInfoRef)CFArrayGetValueAtIndex(allBundles, i);
 		CFStringRef	bundleID	= CFBundleGetIdentifier(bi->bundle);
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2015, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2013, 2015-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -39,7 +39,7 @@
 #include <SystemConfiguration/scprefs_observer.h>
 #include "IPMonitorControlPrefs.h"
 
-os_log_t	__log_IPMonitor();
+os_log_t	__log_IPMonitor(void);
 
 /*
  * kIPMonitorControlPrefsID
@@ -67,21 +67,13 @@ IPMonitorControlPrefsGet(void)
 }
 
 static void
-prefs_changed(__unused void * arg)
+prefs_changed(void * arg)
 {
-    os_activity_t	activity;
-
-    activity = os_activity_create("processing IPMonitor [rank] preference change",
-				  OS_ACTIVITY_CURRENT,
-				  OS_ACTIVITY_FLAG_DEFAULT);
-    os_activity_scope(activity);
-
+#pragma unused(arg)
     /* get the current value */
     if (S_callback != NULL) {
 	(*S_callback)(S_prefs);
     }
-
-    os_release(activity);
 
     return;
 }
@@ -115,7 +107,7 @@ enable_prefs_observer(CFRunLoopRef runloop)
     dispatch_queue_t		queue;
     CFRunLoopSourceRef		source;
 
-    bzero(&context, sizeof(context));
+    memset(&context, 0, sizeof(context));
     context.perform = prefs_changed;
     source = CFRunLoopSourceCreate(kCFAllocatorDefault, 0, &context);
     CFRunLoopAddSource(runloop, source, kCFRunLoopCommonModes);
@@ -139,6 +131,7 @@ enable_prefs_observer(CFRunLoopRef runloop)
 static void
 enable_prefs_observer(CFRunLoopRef runloop)
 {
+#pragma unused(runloop)
     return;
 }
 
@@ -149,6 +142,9 @@ IPMonitorControlPrefsChanged(SCPreferencesRef prefs,
 			     SCPreferencesNotification type,
 			     void * info)
 {
+#pragma unused(prefs)
+#pragma unused(type)
+#pragma unused(info)
     prefs_changed(NULL);
     return;
 }

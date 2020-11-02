@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2011, 2013-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2011, 2013-2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -54,10 +54,11 @@
 #include "configd.h"
 #include "configd_server.h"
 #include "plugin_support.h"
+#include "SCDynamicStoreInternal.h"
 
-#if	TARGET_OS_EMBEDDED && !defined(DO_NOT_INFORM)
+#if	TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR && !defined(DO_NOT_INFORM)
 #include <CoreFoundation/CFUserNotification.h>
-#endif	// TARGET_OS_EMBEDDED && !defined(DO_NOT_INFORM)
+#endif	// TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR && !defined(DO_NOT_INFORM)
 
 __private_extern__
 Boolean	_configd_verbose		= FALSE;	/* TRUE if verbose logging enabled */
@@ -154,13 +155,16 @@ catcher(int signum)
 static void
 term(CFMachPortRef port, void *msg, CFIndex size, void *info)
 {
+#pragma unused(port)
+#pragma unused(msg)
+#pragma unused(size)
+#pragma unused(info)
 	int	status	= EX_OK;
 	Boolean	wait;
 
 	wait = plugin_term(&status);
 	if (!wait) {
 		// if we are not waiting on a plugin
-		status = server_shutdown();
 		exit (status);
 	}
 
@@ -171,6 +175,7 @@ term(CFMachPortRef port, void *msg, CFIndex size, void *info)
 static void
 parent_exit(int i)
 {
+#pragma unused(i)
 	_exit (0);
 }
 
@@ -257,6 +262,7 @@ fork_child()
 static CFStringRef
 termMPCopyDescription(const void *info)
 {
+#pragma unused(info)
 	return CFStringCreateWithFormat(NULL, NULL, CFSTR("<SIGTERM MP>"));
 }
 
@@ -342,7 +348,7 @@ main(int argc, char * const argv[])
 	/* check if we have been started by launchd */
 	vproc_swap_integer(NULL, VPROC_GSK_IS_MANAGED, NULL, &is_launchd_job);
 
-#if	TARGET_OS_EMBEDDED && !defined(DO_NOT_INFORM)
+#if	TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR && !defined(DO_NOT_INFORM)
 	// if launchd job, check to see if we have been restarted
 	if (is_launchd_job) {
 		int64_t	status	= 0;
@@ -367,7 +373,7 @@ main(int argc, char * const argv[])
 			}
 		}
 	}
-#endif	// TARGET_OS_EMBEDDED && !defined(DO_NOT_INFORM)
+#endif	// TARGET_OS_IPHONE && !TARGET_OS_SIMULATOR && !defined(DO_NOT_INFORM)
 
 	/* ensure that forked plugins behave */
 	if (testBundle != NULL) {
@@ -461,6 +467,9 @@ main(int argc, char * const argv[])
 	CFRelease(rls);
 
 	if (testBundle == NULL) {
+		/* don't complain about having  lots of SCDynamicStore objects */
+		_SCDynamicStoreSetSessionWatchLimit(0);
+
 		/* initialize primary (store management) thread */
 		server_init();
 
@@ -475,8 +484,8 @@ main(int argc, char * const argv[])
 			plugin_init();
 		}
 
-		/* start primary (store management) thread */
-		server_loop();
+		/* start main thread */
+		CFRunLoopRun();
 	} else {
 		/* load/initialize/start specified plug-in */
 		plugin_exec((void *)testBundle);

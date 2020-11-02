@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2004-2018 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -279,6 +279,7 @@ hostname_match_first_label(CFArrayRef hosts, CFIndex count, CFStringRef nameToMa
 static void
 ptr_query_callback(SCNetworkReachabilityRef target, SCNetworkReachabilityFlags flags, void *info)
 {
+#pragma unused(info)
 	CFStringRef		hostname	= NULL;
 	struct timeval		ptrQueryComplete;
 	struct timeval		ptrQueryElapsed;
@@ -432,6 +433,7 @@ ptr_query_start(CFStringRef address)
 
 	my_log(LOG_INFO, "hostname: ptr query start");
 
+	(void) gettimeofday(&ptrQueryStart, NULL);
 	(void) SCNetworkReachabilitySetCallback(ptrTarget, ptr_query_callback, NULL);
 	(void) SCNetworkReachabilityScheduleWithRunLoop(ptrTarget, rl, kCFRunLoopDefaultMode);
 
@@ -442,6 +444,8 @@ ptr_query_start(CFStringRef address)
 static void
 update_hostname(SCDynamicStoreRef store, CFArrayRef changedKeys, void *info)
 {
+#pragma unused(changedKeys)
+#pragma unused(info)
 	CFStringRef	address		= NULL;
 	CFStringRef	hostname	= NULL;
 	CFStringRef	serviceID	= NULL;
@@ -532,6 +536,7 @@ __private_extern__
 void
 load_hostname(Boolean verbose)
 {
+#pragma unused(verbose)
 	CFStringRef		key;
 	CFMutableArrayRef	keys		= NULL;
 	dispatch_block_t	notify_block;
@@ -619,6 +624,7 @@ load_hostname(Boolean verbose)
 					  &notify_token,
 					  queue,
 					  ^(int token){
+#pragma unused(token)
 						  CFRunLoopPerformBlock(rl,
 									kCFRunLoopDefaultMode,
 									notify_block);

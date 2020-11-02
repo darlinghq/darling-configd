@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2001, 2003-2005, 2008-2011, 2013, 2015, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2000, 2001, 2003-2005, 2008-2011, 2013, 2015-2017, 2019 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -39,14 +39,12 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/fileport.h>
 
 Boolean
 SCDynamicStoreNotifyFileDescriptor(SCDynamicStoreRef	store,
 				    int32_t		identifier,
 				    int			*fd)
 {
-	struct os_activity_scope_state_s	activity_state;
 	int					fildes[2]	= { -1, -1 };
 	fileport_t				fileport	= MACH_PORT_NULL;
 	int					ret;
@@ -92,8 +90,6 @@ SCDynamicStoreNotifyFileDescriptor(SCDynamicStoreRef	store,
 		goto fail;
 	}
 
-	os_activity_scope_enter(storePrivate->activity, &activity_state);
-
     retry :
 
 	status = notifyviafd(storePrivate->server,
@@ -107,8 +103,6 @@ SCDynamicStoreNotifyFileDescriptor(SCDynamicStoreRef	store,
 						     "SCDynamicStoreNotifyFileDescriptor notifyviafd()")) {
 		goto retry;
 	}
-
-	os_activity_scope_leave(&activity_state);
 
 	if (status != KERN_SUCCESS) {
 		_SCErrorSet(status);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2006, 2008, 2009, 2011-2013, 2015, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2004-2006, 2008, 2009, 2011-2013, 2015-2018 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -28,14 +28,14 @@
  * These routines provide access to the systems DNS configuration
  */
 
-#include <Availability.h>
+#include <os/availability.h>
 #include <sys/cdefs.h>
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 
-#define	DNSINFO_VERSION		20160901
+#define	DNSINFO_VERSION		20170629
 
 #define DEFAULT_SEARCH_ORDER    200000   /* search order for the "default" resolver domain name */
 
@@ -75,7 +75,7 @@ typedef struct {
 	DNS_VAR(uint32_t,		reach_flags);	/* SCNetworkReachabilityFlags */
 	DNS_VAR(uint32_t,		service_identifier);
 	DNS_PTR(char *,			cid);		/* configuration identifer */
-	DNS_VAR(uint32_t,		reserved[2]);
+	DNS_PTR(char *,			if_name);	/* if_index interface name */
 } dns_resolver_t;
 #pragma pack()
 
@@ -100,6 +100,7 @@ typedef struct {
 	DNS_VAR(uint64_t,		generation);
 	DNS_VAR(int32_t,		n_service_specific_resolver);
 	DNS_PTR(dns_resolver_t **,	service_specific_resolver);
+	DNS_VAR(uint32_t,		version);
 } dns_config_t;
 #pragma pack()
 
@@ -110,17 +111,17 @@ __BEGIN_DECLS
  * DNS configuration access APIs
  */
 const char *
-dns_configuration_notify_key    ()				__OSX_AVAILABLE_STARTING(__MAC_10_4,__IPHONE_2_0);
+dns_configuration_notify_key    (void)				API_AVAILABLE(macos(10.4), ios(2.0));
 
 dns_config_t *
-dns_configuration_copy		()				__OSX_AVAILABLE_STARTING(__MAC_10_4,__IPHONE_2_0);
+dns_configuration_copy		(void)				API_AVAILABLE(macos(10.4), ios(2.0));
 
 void
-dns_configuration_free		(dns_config_t	*config)	__OSX_AVAILABLE_STARTING(__MAC_10_4,__IPHONE_2_0);
+dns_configuration_free		(dns_config_t	*config)	API_AVAILABLE(macos(10.4), ios(2.0));
 
 void
 _dns_configuration_ack		(dns_config_t	*config,
-				 const char	*bundle_id)	__OSX_AVAILABLE_STARTING(__MAC_10_8, __IPHONE_6_0);
+				 const char	*bundle_id)	API_AVAILABLE(macos(10.8), ios(6.0));
 
 __END_DECLS
 

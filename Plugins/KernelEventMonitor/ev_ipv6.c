@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002-2007, 2011, 2013, 2015 Apple Inc. All rights reserved.
+ * Copyright (c) 2002-2007, 2011, 2013, 2015, 2017, 2018 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -30,7 +30,6 @@
 
 
 #include "eventmon.h"
-#include "cache.h"
 #include "ev_ipv6.h"
 
 #define s6_addr16 __u6_addr.__u6_addr16
@@ -107,7 +106,7 @@ appendPrefixLen(CFMutableDictionaryRef dict, struct sockaddr_in6 *sin6)
 	CFArrayRef		prefixLens;
 	CFMutableArrayRef	newPrefixLens;
 
-	register int		byte;
+	register size_t		byte;
 	register int		bit;
 	int			plen		= 0;
 
@@ -196,7 +195,7 @@ copyIF(CFStringRef key, CFMutableDictionaryRef oldIFs, CFMutableDictionaryRef ne
 	if (CFDictionaryGetValueIfPresent(newIFs, key, (const void **)&dict)) {
 		newDict = CFDictionaryCreateMutableCopy(NULL, 0, dict);
 	} else {
-		dict = cache_SCDynamicStoreCopyValue(store, key);
+		dict = SCDynamicStoreCopyValue(store, key);
 		if (dict) {
 			CFDictionarySetValue(oldIFs, key, dict);
 			if (isA_CFDictionary(dict)) {
@@ -236,10 +235,16 @@ updateStore(const void *key, const void *value, void *context)
 	if (!dict || !CFEqual(dict, newDict)) {
 		if (CFDictionaryGetCount(newDict) > 0) {
 			SC_log(LOG_DEBUG, "Update interface configuration: %@: %@", key, newDict);
-			cache_SCDynamicStoreSetValue(store, key, newDict);
+			SCDynamicStoreSetValue(store, key, newDict);
 		} else if (dict) {
-			SC_log(LOG_DEBUG, "Update interface configuration: %@: <removed>", key);
-			cache_SCDynamicStoreRemoveValue(store, key);
+			CFDictionaryRef		oldDict;
+
+			oldDict = SCDynamicStoreCopyValue(store, key);
+			if (oldDict != NULL) {
+				SC_log(LOG_DEBUG, "Update interface configuration: %@: <removed>", key);
+				CFRelease(oldDict);
+			}
+			SCDynamicStoreRemoveValue(store, key);
 		}
 		network_changed = TRUE;
 	}
@@ -330,7 +335,7 @@ interface_update_ipv6(struct ifaddrs *ifap, const char *if_name)
 			}
 		}
 
-		bzero((char *)&ifr6, sizeof(ifr6));
+		memset((char *)&ifr6, 0, sizeof(ifr6));
 		strlcpy(ifr6.ifr_name, ifa->ifa_name, sizeof(ifr6.ifr_name));
 		ifr6.ifr_addr = *sin6;
 		if (ioctl(sock, SIOCGIFAFLAG_IN6, &ifr6) == -1) {
@@ -431,8 +436,43 @@ ipv6_duplicated_address(const char * if_name, const struct in6_addr * addr,
 	    CFStringAppendFormat(key, NULL, CFSTR("%s%02x"),
 				 (i == 0) ? "/" : ":", hw_addr_bytes[i]);
 	}
-	cache_SCDynamicStoreNotifyValue(store, key);
+	SCDynamicStoreNotifyValue(store, key);
 	CFRelease(key);
 	CFRelease(prefix);
 	CFRelease(if_name_cf);
+}
+
+__private_extern__
+void
+nat64_prefix_request(const char *if_name)
+{
+	CFStringRef		if_name_cf;
+	CFStringRef		key;
+
+	if_name_cf = CFStringCreateWithCString(NULL, if_name, kCFStringEncodingASCII);
+	key = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL,
+							    kSCDynamicStoreDomainState,
+							    if_name_cf,
+							    kSCEntNetNAT64PrefixRequest);
+	CFRelease(if_name_cf);
+	SC_log(LOG_DEBUG, "Post NAT64 prefix request: %@", key);
+	SCDynamicStoreNotifyValue(store, key);
+	CFRelease(key);
+}
+
+__private_extern__ void
+ipv6_router_expired(const char *if_name)
+{
+	CFStringRef		if_name_cf;
+	CFStringRef		key;
+
+	if_name_cf = CFStringCreateWithCString(NULL, if_name, kCFStringEncodingASCII);
+	key = SCDynamicStoreKeyCreateNetworkInterfaceEntity(NULL,
+							    kSCDynamicStoreDomainState,
+							    if_name_cf,
+							    kSCEntNetIPv6RouterExpired);
+	CFRelease(if_name_cf);
+	SC_log(LOG_DEBUG, "Post IPv6 Router Expired: %@", key);
+	SCDynamicStoreNotifyValue(store, key);
+	CFRelease(key);
 }

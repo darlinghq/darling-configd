@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006-2012, 2015, 2016 Apple Inc. All rights reserved.
+ * Copyright (c) 2006-2012, 2015-2018 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -496,6 +496,9 @@ removeCallout(CFStringRef	serviceID,
 	      void		*context2,
 	      void		*context3)
 {
+#pragma unused(serviceID)
+#pragma unused(context2)
+#pragma unused(context3)
 	CFStringRef	matchID	= (CFStringRef)context1;
 
 	if (current == NULL) {
@@ -537,6 +540,9 @@ setCurrentCallout(CFStringRef		serviceID,
 		  void			*context2,
 		  void			*context3)
 {
+#pragma unused(serviceID)
+#pragma unused(context2)
+#pragma unused(context3)
 	CFStringRef			matchID		= (CFStringRef)context1;
 	CFMutableDictionaryRef		newDict;
 
@@ -584,6 +590,9 @@ copyNameCallout(CFStringRef	serviceID,
 		void		*context2,
 		void		*context3)
 {
+#pragma unused(serviceID)
+#pragma unused(context2)
+#pragma unused(context3)
 	CFStringRef	matchID	= (CFStringRef)context1;
 	CFStringRef	*name	= (CFStringRef *)context3;
 
@@ -593,6 +602,10 @@ copyNameCallout(CFStringRef	serviceID,
 	}
 
 	if (isMatchingPrefsID(current, matchID)) {
+		if (*name != NULL) {
+			CFRelease(*name);
+			*name = NULL;
+		}
 		*name = CFDictionaryGetValue(current, kSCPropUserDefinedName);
 
 		// for backwards compatibility, we also check for the name in the PPP entity
@@ -651,6 +664,9 @@ setNameCallout(CFStringRef	serviceID,
 	       void		*context2,
 	       void		*context3)
 {
+#pragma unused(serviceID)
+#pragma unused(context2)
+#pragma unused(context3)
 	CFStringRef		matchID	= (CFStringRef)context1;
 	CFMutableDictionaryRef	newDict;
 	CFStringRef		newName	= (CFStringRef)context2;
@@ -726,6 +742,7 @@ copyInterfaceConfigurationCallout(CFStringRef		serviceID,
 				  void			*context2,
 				  void			*context3)
 {
+#pragma unused(serviceID)
 	CFDictionaryRef	*dict		= (CFDictionaryRef *)context3;
 	CFStringRef	interfaceType	= (CFStringRef)context2;
 	CFStringRef	matchID		= (CFStringRef)context1;
@@ -736,6 +753,10 @@ copyInterfaceConfigurationCallout(CFStringRef		serviceID,
 	}
 
 	if (isMatchingPrefsID(current, matchID)) {
+		if (*dict != NULL) {
+			CFRelease(*dict);
+			*dict = NULL;
+		}
 		*dict = CFDictionaryGetValue(current, interfaceType);
 		*dict = isA_CFDictionary(*dict);
 		if (*dict != NULL) {
@@ -792,11 +813,12 @@ SCUserPreferencesCopyInterfaceConfiguration(SCUserPreferencesRef	userPreferences
 
 static CF_RETURNS_RETAINED CFDictionaryRef
 setInterfaceConfigurationCallout(CFStringRef		serviceID,
-				  CFDictionaryRef	current,
-				  void			*context1,
-				  void			*context2,
-				  void			*context3)
+				 CFDictionaryRef	current,
+				 void			*context1,
+				 void			*context2,
+				 void			*context3)
 {
+#pragma unused(serviceID)
 	CFStringRef		interfaceType	= (CFStringRef)context2;
 	CFStringRef		matchID		= (CFStringRef)context1;
 	CFMutableDictionaryRef	newDict;
@@ -969,6 +991,8 @@ copyAllCallout(CFStringRef	serviceID,
 	       void		*context2,
 	       void		*context3)
 {
+#pragma unused(context1)
+#pragma unused(context2)
 	CFMutableArrayRef		*prefs		= (CFMutableArrayRef *)context3;
 	CFStringRef			prefsID;
 	SCUserPreferencesPrivateRef	userPrivate;
@@ -1034,6 +1058,8 @@ copyCurrentCallout(CFStringRef		serviceID,
 		   void			*context2,
 		   void			*context3)
 {
+#pragma unused(context1)
+#pragma unused(context2)
 	CFBooleanRef			isDefault;
 	CFStringRef			prefsID;
 	SCUserPreferencesPrivateRef	*userPrivate	= (SCUserPreferencesPrivateRef *)context3;
@@ -1098,6 +1124,9 @@ createCallout(CFStringRef	serviceID,
 	      void		*context2,
 	      void		*context3)
 {
+#pragma unused(serviceID)
+#pragma unused(context2)
+#pragma unused(context3)
 	CFMutableDictionaryRef		newDict;
 	CFStringRef			newPrefsID	= (CFStringRef)context1;
 
@@ -1327,6 +1356,8 @@ copyOptionsCallout(CFStringRef		serviceID,
 		   void			*context2,
 		   void			*context3)
 {
+#pragma unused(serviceID)
+#pragma unused(context2)
 	CFStringRef		matchID		= (CFStringRef)context1;
 	CFMutableDictionaryRef	*userOptions	= (CFMutableDictionaryRef *)context3;
 
@@ -1944,7 +1975,7 @@ SCUserPreferencesSetInterfacePassword(SCUserPreferencesRef		userPreferences,
 	CFDictionaryRef	config;
 	CFStringRef	description	= NULL;
 	CFStringRef	label		= NULL;
-	Boolean		ok	= FALSE;
+	Boolean		ok		= FALSE;
 
 	if (!checkUserPreferencesPassword(userPreferences, interface, passwordType)) {
 		return FALSE;
