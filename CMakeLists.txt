@@ -16,15 +16,14 @@ include_directories(
     Plugins/IPMonitor
 )
 
-add_darling_library(system_configuration
-    # For now, I don't want to potentially break 
-    # how Darling currently handles dnsinfo.
-    
+add_darling_library(system_configuration    
     # dnsinfo/dnsinfo_copy.c
-    # nwi/network_information.c
-    # libSystemConfiguration/libSystemConfiguration_client.c
-    # config-agent-info/config_agent_info.c
+    nwi/network_information.c
+    libSystemConfiguration/libSystemConfiguration_client.c
+    config-agent-info/config_agent_info.c
 
+    # Our implementation of dnsinfo only parses the 
+    # /etc/resolv.conf file.
     darling/src/dnsinfo/dnsinfo.c
 )
 

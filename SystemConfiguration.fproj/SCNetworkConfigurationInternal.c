@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004-2007, 2009, 2010-2013, 2015-2018 Apple Inc. All rights reserved.
+ * Copyright (c) 2004-2007, 2009, 2010-2013, 2015-2021 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -29,11 +29,15 @@
  */
 
 
-#include "SCPreferencesInternal.h"
 #include "SCNetworkConfigurationInternal.h"
+#include "SCPreferencesInternal.h"
 
 #include <sys/ioctl.h>
 #include <net/if.h>
+
+
+#pragma mark -
+#pragma mark SCNetworkConfiguration logging
 
 
 __private_extern__ os_log_t
@@ -49,28 +53,246 @@ __log_SCNetworkConfiguration(void)
 }
 
 
-__private_extern__ CFDictionaryRef
-__getPrefsConfiguration(SCPreferencesRef prefs, CFStringRef path)
+static void
+logConfiguration_NetworkInterfaces(int level, const char *description, SCPreferencesRef prefs)
 {
-	CFDictionaryRef config;
-	CFIndex		n;
+	CFArrayRef	interfaces;
 
-	config = SCPreferencesPathGetValue(prefs, path);
+	interfaces = SCPreferencesGetValue(prefs, INTERFACES);
+	if (isA_CFArray(interfaces)) {
+		CFStringRef	model	= SCPreferencesGetValue(prefs, MODEL);
+		CFIndex		n	= CFArrayGetCount(interfaces);
+
+		SC_log(level, "%s%sinterfaces (%@)",
+		       description != NULL ? description : "",
+		       description != NULL ? " " : "",
+		       model != NULL ? model : CFSTR("No model"));
+
+		for (CFIndex i = 0; i < n; i++) {
+			CFStringRef	bsdName;
+			CFDictionaryRef	dict;
+			CFDictionaryRef	info;
+			CFStringRef	name;
+
+			dict = CFArrayGetValueAtIndex(interfaces, i);
+			if (!isA_CFDictionary(dict)) {
+				continue;
+			}
+
+			bsdName = CFDictionaryGetValue(dict, CFSTR(kSCNetworkInterfaceBSDName));
+			if (!isA_CFString(bsdName)) {
+				continue;
+			}
+
+			info    = CFDictionaryGetValue(dict, CFSTR(kSCNetworkInterfaceInfo));
+			name    = CFDictionaryGetValue(info, kSCPropUserDefinedName);
+			SC_log(level, "  %@ (%@)",
+			       bsdName,
+			       name != NULL ? name : CFSTR("???"));
+		}
+
+	}
+}
+
+static void
+logConfiguration_preferences(int level, const char *description, SCPreferencesRef prefs)
+{
+	CFStringRef		model	= SCPreferencesGetValue(prefs, MODEL);
+	CFIndex			n;
+	CFMutableArrayRef	orphans;
+	CFArrayRef		services;
+	CFArrayRef		sets;
+
+	SC_log(level, "%s%sconfiguration (%@)",
+	       description != NULL ? description : "",
+	       description != NULL ? " " : "",
+	       model != NULL ? model : CFSTR("No model"));
+
+	services = SCNetworkServiceCopyAll(prefs);
+	if (services != NULL) {
+		orphans = CFArrayCreateMutableCopy(NULL, 0, services);
+		CFRelease(services);
+	} else {
+		orphans = CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks);
+	}
+
+	sets = SCNetworkSetCopyAll(prefs);
+	if (sets != NULL) {
+		n = CFArrayGetCount(sets);
+		for (CFIndex i = 0; i < n; i++) {
+			SCNetworkSetRef	set;
+
+			set = CFArrayGetValueAtIndex(sets, i);
+			SC_log(level, "  Set %@ (%@)",
+			       SCNetworkSetGetSetID(set),
+			       SCNetworkSetGetName(set));
+
+			services = SCNetworkSetCopyServices(set);
+			if (services != NULL) {
+				CFIndex		n;
+				CFIndex		nOrder	= 0;
+				CFArrayRef	order;
+
+				order = SCNetworkSetGetServiceOrder(set);
+				if (order != NULL) {
+					nOrder = CFArrayGetCount(order);
+				}
+
+				n = CFArrayGetCount(services);
+				if (n > 1) {
+					CFMutableArrayRef	sorted;
+
+					sorted = CFArrayCreateMutableCopy(NULL, 0, services);
+					CFArraySortValues(sorted,
+							  CFRangeMake(0, CFArrayGetCount(sorted)),
+							  _SCNetworkServiceCompare,
+							  (void *)order);
+					CFRelease(services);
+					services = sorted;
+				}
+
+				for (CFIndex i = 0; i < n; i++) {
+					CFStringRef		bsdName;
+					SCNetworkInterfaceRef	interface;
+					CFIndex			o;
+					CFIndex			orderIndex	= kCFNotFound;
+					SCNetworkServiceRef	service;
+					CFStringRef		serviceName;
+					CFStringRef		serviceID;
+					CFStringRef		userDefinedName;
+
+					service     = CFArrayGetValueAtIndex(services, i);
+					serviceID   = SCNetworkServiceGetServiceID(service);
+					serviceName = SCNetworkServiceGetName(service);
+					if (serviceName == NULL) serviceName = CFSTR("");
+
+					interface       = SCNetworkServiceGetInterface(service);
+					bsdName         = SCNetworkInterfaceGetBSDName(interface);
+
+					userDefinedName = __SCNetworkInterfaceGetUserDefinedName(interface);
+					if (_SC_CFEqual(serviceName, userDefinedName)) {
+						userDefinedName = NULL;
+					}
+
+					if (order != NULL) {
+						orderIndex  = CFArrayGetFirstIndexOfValue(order,
+											  CFRangeMake(0, nOrder),
+											  serviceID);
+					}
+					if (orderIndex != kCFNotFound) {
+						SC_log(level, "    Service %2ld : %@, %2d (%@%s%@%s%@)",
+						       orderIndex + 1,
+						       serviceID,
+						       __SCNetworkInterfaceOrder(interface),	// temp?
+						       serviceName,
+						       bsdName != NULL ? ", " : "",
+						       bsdName != NULL ? bsdName : CFSTR(""),
+						       userDefinedName != NULL ? " : " : "",
+						       userDefinedName != NULL ? userDefinedName : CFSTR(""));
+					} else {
+						SC_log(level, "    Service    : %@, %2d (%@%s%@%s%@)",
+						       serviceID,
+						       __SCNetworkInterfaceOrder(interface),	// temp?
+						       serviceName,
+						       bsdName != NULL ? ", " : "",
+						       bsdName != NULL ? bsdName : CFSTR(""),
+						       userDefinedName != NULL ? " : " : "",
+						       userDefinedName != NULL ? userDefinedName : CFSTR(""));
+					}
+
+					o = CFArrayGetFirstIndexOfValue(orphans, CFRangeMake(0, CFArrayGetCount(orphans)), service);
+					if (o != kCFNotFound) {
+						CFArrayRemoveValueAtIndex(orphans, o);
+					}
+				}
+
+				CFRelease(services);
+			}
+		}
+
+		CFRelease(sets);
+	}
+
+	n = CFArrayGetCount(orphans);
+	if (n > 0) {
+		SC_log(level, "  Orphans");
+
+		for (CFIndex i = 0; i < n; i++) {
+			CFStringRef		bsdName;
+			SCNetworkInterfaceRef	interface;
+			SCNetworkServiceRef	service;
+			CFStringRef		serviceName;
+			CFStringRef		serviceID;
+
+			service     = CFArrayGetValueAtIndex(orphans, i);
+			serviceID   = SCNetworkServiceGetServiceID(service);
+			serviceName = SCNetworkServiceGetName(service);
+			if (serviceName == NULL) serviceName = CFSTR("");
+
+			interface   = SCNetworkServiceGetInterface(service);
+			bsdName     = SCNetworkInterfaceGetBSDName(interface);
+
+			SC_log(level, "    Service    : %@, %2d (%@%s%@)",
+			       serviceID,
+			       __SCNetworkInterfaceOrder(SCNetworkServiceGetInterface(service)),	// temp?
+			       serviceName,
+			       bsdName != NULL ? ", " : "",
+			       bsdName != NULL ? bsdName : CFSTR(""));
+		}
+	}
+	CFRelease(orphans);
+
+	return;
+}
+
+void
+__SCNetworkConfigurationReport(int level, const char *description, SCPreferencesRef prefs, SCPreferencesRef ni_prefs)
+{
+	logConfiguration_NetworkInterfaces(level, description, ni_prefs);
+	logConfiguration_preferences      (level, description, prefs);
+	return;
+}
+
+
+#pragma mark -
+#pragma mark Misc
+
+
+static Boolean
+isEffectivelyEmptyConfiguration(CFDictionaryRef config)
+{
+	Boolean		empty	= FALSE;
+	CFIndex		n;
 
 	n = isA_CFDictionary(config) ? CFDictionaryGetCount(config) : 0;
 	switch (n) {
 		case 0 :
-			// ignore empty configuration entities
-			config = NULL;
+			// if no keys
+			empty = TRUE;
 			break;
 		case 1 :
 			if (CFDictionaryContainsKey(config, kSCResvInactive)) {
 				// ignore [effectively] empty configuration entities
-				config = NULL;
+				empty = TRUE;
 			}
 			break;
 		default :
 			break;
+	}
+
+	return empty;
+}
+
+
+__private_extern__ CFDictionaryRef
+__SCNetworkConfigurationGetValue(SCPreferencesRef prefs, CFStringRef path)
+{
+	CFDictionaryRef config;
+
+	config = SCPreferencesPathGetValue(prefs, path);
+	if (isEffectivelyEmptyConfiguration(config)) {
+		// ignore [effectively] empty configuration entities
+		config = NULL;
 	}
 
 	return config;
@@ -78,11 +300,12 @@ __getPrefsConfiguration(SCPreferencesRef prefs, CFStringRef path)
 
 
 __private_extern__ Boolean
-__setPrefsConfiguration(SCPreferencesRef	prefs,
-			CFStringRef		path,
-			CFDictionaryRef		config,
-			Boolean			keepInactive)
+__SCNetworkConfigurationSetValue(SCPreferencesRef	prefs,
+				 CFStringRef		path,
+				 CFDictionaryRef	config,
+				 Boolean		keepInactive)
 {
+	Boolean			changed;
 	CFDictionaryRef		curConfig;
 	CFMutableDictionaryRef	newConfig	= NULL;
 	Boolean			ok;
@@ -93,6 +316,7 @@ __setPrefsConfiguration(SCPreferencesRef	prefs,
 	}
 
 	curConfig = SCPreferencesPathGetValue(prefs, path);
+	curConfig = isA_CFDictionary(curConfig);
 
 	if (config != NULL) {
 		newConfig = CFDictionaryCreateMutableCopy(NULL, 0, config);
@@ -115,16 +339,20 @@ __setPrefsConfiguration(SCPreferencesRef	prefs,
 		}
 	}
 
+	// check if the configuration changed
+	changed = !_SC_CFEqual(curConfig, newConfig);
+
 	// set new configuration
-	if (_SC_CFEqual(curConfig, newConfig)) {
+	if (!changed) {
 		// if no change
 		if (newConfig != NULL) CFRelease(newConfig);
 		ok = TRUE;
 	} else if (newConfig != NULL) {
-		// if new configuration (or we are preserving a disabled state)
+		// if new configuration (or we are preserving a disabled state), update the prefs
 		ok = SCPreferencesPathSetValue(prefs, path, newConfig);
 		CFRelease(newConfig);
 	} else {
+		// update the prefs
 		ok = SCPreferencesPathRemoveValue(prefs, path);
 		if (!ok && (SCError() == kSCStatusNoKey)) {
 			ok = TRUE;
@@ -154,9 +382,10 @@ __setPrefsEnabled(SCPreferencesRef      prefs,
 		  CFStringRef		path,
 		  Boolean		enabled)
 {
-	CFDictionaryRef		curConfig;
-	CFMutableDictionaryRef  newConfig       = NULL;
-	Boolean			ok		= FALSE;
+	Boolean					changed;
+	CFDictionaryRef				curConfig;
+	CFMutableDictionaryRef 			newConfig       = NULL;
+	Boolean					ok		= FALSE;
 
 	// preserve current configuration
 	curConfig = SCPreferencesPathGetValue(prefs, path);
@@ -182,13 +411,17 @@ __setPrefsEnabled(SCPreferencesRef      prefs,
 		}
 	}
 
+	// check if the configuration changed
+	changed = !_SC_CFEqual(curConfig, newConfig);
+
 	// set new configuration
-	if (_SC_CFEqual(curConfig, newConfig)) {
+	if (!changed) {
 		// if no change
 		if (newConfig != NULL) CFRelease(newConfig);
 		ok = TRUE;
 	} else if (newConfig != NULL) {
 		// if updated configuration (or we are establishing as disabled)
+
 		ok = SCPreferencesPathSetValue(prefs, path, newConfig);
 		CFRelease(newConfig);
 	} else {
@@ -671,3 +904,50 @@ __str_to_rank(CFStringRef rankStr, SCNetworkServicePrimaryRank *rank)
 
 	return TRUE;
 }
+
+
+#define	kSCNetworkConfigurationFlagsBypassSystemInterfaces		(1<<0)
+#define	kSCNetworkConfigurationFlagsBypassSystemInterfacesForced	(1<<1)
+
+
+Boolean
+_SCNetworkConfigurationBypassSystemInterfaces(SCPreferencesRef prefs)
+{
+	Boolean		bypass;
+	uint32_t	nc_flags;
+
+	nc_flags = __SCPreferencesGetNetworkConfigurationFlags(prefs);
+	bypass = ((nc_flags & kSCNetworkConfigurationFlagsBypassSystemInterfaces) != 0);
+	if (bypass ||
+	    (nc_flags & kSCNetworkConfigurationFlagsBypassSystemInterfacesForced) != 0) {
+		// if bypass flag explicitly requested
+		return bypass;
+	}
+
+	if (!__SCPreferencesUsingDefaultPrefs(prefs)) {
+		// if not using the default prefs (i.e. /L/P/SC/preferences.plist)
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+
+void
+_SCNetworkConfigurationSetBypassSystemInterfaces(SCPreferencesRef prefs, Boolean shouldBypass)
+{
+	uint32_t	nc_flags;
+
+	nc_flags = __SCPreferencesGetNetworkConfigurationFlags(prefs);
+	if (shouldBypass) {
+		nc_flags |= kSCNetworkConfigurationFlagsBypassSystemInterfaces;
+	} else {
+		nc_flags &= ~kSCNetworkConfigurationFlagsBypassSystemInterfaces;
+	}
+	nc_flags |= kSCNetworkConfigurationFlagsBypassSystemInterfacesForced;
+	__SCPreferencesSetNetworkConfigurationFlags(prefs, nc_flags);
+
+	return;
+}
+
+

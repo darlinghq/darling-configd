@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2018 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -75,9 +75,11 @@ __private_extern__ AuthorizationRef	authorization	= NULL;
 __private_extern__ InputRef		currentInput	= NULL;
 __private_extern__ Boolean		doDispatch	= FALSE;
 __private_extern__ int			nesting		= 0;
+__private_extern__ SCPreferencesRef	ni_prefs	= NULL;
 __private_extern__ CFRunLoopRef		notifyRl	= NULL;
 __private_extern__ CFRunLoopSourceRef	notifyRls	= NULL;
 __private_extern__ SCPreferencesRef	prefs		= NULL;
+__private_extern__ char			*prefsPath	= NULL;
 __private_extern__ SCDynamicStoreRef	store		= NULL;
 __private_extern__ CFPropertyListRef	value		= NULL;
 __private_extern__ CFMutableArrayRef	watchedKeys	= NULL;
@@ -92,6 +94,7 @@ static const struct option longopts[] = {
 //	{ "timeout",		required_argument,	NULL,	't'	},
 //	{ "wait-key",		required_argument,	NULL,	'w'	},
 //	{ "watch-reachability",	no_argument,		NULL,	'W'	},
+	{ "configuration",	no_argument,		NULL,	0	},
 	{ "dns",		no_argument,		NULL,	0	},
 	{ "get",		required_argument,	NULL,	0	},
 	{ "error",		required_argument,	NULL,	0	},
@@ -404,11 +407,12 @@ prompt(EditLine *el)
 int
 main(int argc, char * const argv[])
 {
+	const char *		advisoryInterface	= NULL;
 #if	!TARGET_OS_IPHONE
 	Boolean			allowNewInterfaces	= FALSE;
 #endif	// !TARGET_OS_IPHONE
+	Boolean			configuration		= FALSE;
 	Boolean			disableUntilNeeded	= FALSE;
-	const char *		advisoryInterface	= NULL;
 	Boolean			doAdvisory		= FALSE;
 	Boolean			doDNS			= FALSE;
 	Boolean			doNet			= FALSE;
@@ -439,14 +443,14 @@ main(int argc, char * const argv[])
 		switch(opt) {
 		case 'd':
 			_sc_debug = TRUE;
-			_sc_log   = FALSE;	/* enable framework logging */
+			_sc_log   = kSCLogDestinationFile;	/* enable framework logging */
 			break;
 		case 'D':
 			doDispatch = TRUE;
 			break;
 		case 'v':
 			_sc_verbose = TRUE;
-			_sc_log     = FALSE;	/* enable framework logging */
+			_sc_log     = kSCLogDestinationFile;	/* enable framework logging */
 			break;
 		case 'p':
 			enablePrivateAPI = TRUE;
@@ -466,7 +470,10 @@ main(int argc, char * const argv[])
 			watch = TRUE;
 			break;
 		case 0:
-			if        (strcmp(longopts[opti].name, "dns") == 0) {
+			if        (strcmp(longopts[opti].name, "configuration") == 0) {
+				configuration = TRUE;
+				xStore++;
+			} else if (strcmp(longopts[opti].name, "dns") == 0) {
 				doDNS = TRUE;
 				xStore++;
 			} else if (strcmp(longopts[opti].name, "error") == 0) {
@@ -534,6 +541,12 @@ main(int argc, char * const argv[])
 	if (xStore > 1) {
 		// if we are attempting to process more than one type of request
 		usage(prog);
+	}
+
+	/* are we asking for a configuration summary */
+	if (configuration) {
+		do_configuration(argc, (char **)argv);
+		/* NOT REACHED */
 	}
 
 	/* are we checking (or watching) the reachability of a host/address */

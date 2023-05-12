@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015-2017 Apple Inc. All rights reserved.
+ * Copyright (c) 2015-2017, 2020 Apple Inc. All rights reserved.
  *
  * @APPLE_LICENSE_HEADER_START@
  *
@@ -56,6 +56,7 @@ typedef struct resolverList {
 @interface AgentController()
 
 @property (nonatomic) NSMutableDictionary	*	floatingProxyAgentList;
+@property (nonatomic) NSMutableDictionary	*	floatingProxyAgentList_TCPConverter;
 @property (nonatomic) NSMutableDictionary	*	floatingDNSAgentList;
 @property (nonatomic) NSMutableDictionary	*	policyDB;
 @property (nonatomic) NEPolicySession		*	policySession;
@@ -125,6 +126,14 @@ typedef struct resolverList {
 			}
 		}
 
+		if (self.floatingProxyAgentList_TCPConverter == nil) {
+			self.floatingProxyAgentList_TCPConverter = [NSMutableDictionary dictionary];
+			if (self.floatingProxyAgentList_TCPConverter == nil) {
+				errorMessage = "Failed to create a dictionary";
+				break;
+			}
+		}
+
 		/*	A dictionary of all floating dns agents
 		 *		Key	:	<entity-name> (can be an interface name or domain name)
 		 *		Value	:	agent object
@@ -183,6 +192,7 @@ typedef struct resolverList {
 	/* Make sure that we have all our data structures in place */
 	return ((self.policySession != nil) &&
 		(self.floatingProxyAgentList != nil) &&
+		(self.floatingProxyAgentList_TCPConverter != nil) &&
 		(self.floatingDNSAgentList != nil) &&
 		(self.policyDB != nil) &&
 		(self.controllerQueue != nil));
@@ -259,22 +269,31 @@ typedef struct resolverList {
 
 - (int)countProxyEntriesEnabled:(CFDictionaryRef)proxies
 {
-	int	enabled = 0;
+	const CFStringRef enableKeys[] = {
+		kSCPropNetProxiesHTTPEnable,
+		kSCPropNetProxiesHTTPSEnable,
+		kSCPropNetProxiesProxyAutoConfigEnable,
+		kSCPropNetProxiesFTPEnable,
+		kSCPropNetProxiesGopherEnable,
+		kSCPropNetProxiesRTSPEnable,
+		kSCPropNetProxiesSOCKSEnable,
+		kSCPropNetProxiesTransportConverterEnable,
+		kSCPropNetProxiesProxyAutoDiscoveryEnable,
+	};
 
 	if (proxies == NULL) {
-		SC_log(LOG_NOTICE, "Invalid proxies");
+		SC_log(LOG_NOTICE, "No proxies");
 		return 0;
 	}
 
-	if (([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesHTTPEnable) valuePtr:&enabled] && enabled > 0)	||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesHTTPSEnable) valuePtr:&enabled] && enabled > 0)	||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesProxyAutoConfigEnable) valuePtr:&enabled] && enabled > 0) ||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesFTPEnable) valuePtr:&enabled] && enabled > 0)	||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesGopherEnable) valuePtr:&enabled] && enabled > 0)	||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesRTSPEnable) valuePtr:&enabled] && enabled > 0)	||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesSOCKSEnable) valuePtr:&enabled] && enabled > 0)	||
-	    ([self getIntValue:CFDictionaryGetValue(proxies, kSCPropNetProxiesProxyAutoDiscoveryEnable) valuePtr:&enabled] && enabled > 0)) {
-		return enabled;
+	for (size_t i = 0; i < (sizeof(enableKeys) / sizeof(enableKeys[0])); i++) {
+		int	enabled = 0;
+
+		if ([self getIntValue:CFDictionaryGetValue(proxies, enableKeys[i])
+			     valuePtr:&enabled] &&
+		    (enabled > 0)) {
+			return enabled;
+		}
 	}
 
 	return 0;
@@ -648,6 +667,43 @@ typedef struct resolverList {
 	return NO;
 }
 
+- (BOOL)isTCPConverterProxyEnabled:(CFDictionaryRef)proxies
+{
+	int		enabled	= 0;
+	CFNumberRef	num	= NULL;
+
+	if (CFDictionaryGetValueIfPresent(proxies,
+					  kSCPropNetProxiesTransportConverterEnable,
+					  (const void **)&num) &&
+	    isA_CFNumber(num) &&
+	    CFNumberGetValue(num, kCFNumberIntType, &enabled) &&
+	    (enabled != 0)) {
+		return YES;
+	}
+
+	return NO;
+}
+
+#define	ALLOW_AGGREGATE	"net.inet.mptcp.allow_aggregate"
+
+static void
+updateTransportConverterProxyEnabled(BOOL enabled)
+{
+	int	ret;
+	int	val	= enabled ? 1 : 0;
+
+	ret = sysctlbyname(ALLOW_AGGREGATE, NULL, 0, &val, sizeof(val));
+	if (ret != -1) {
+		SC_log(LOG_NOTICE, "Transport Converter Proxy: sysctl " ALLOW_AGGREGATE "=%d", val);
+	} else {
+		if (errno != ENOENT) {
+			SC_log(LOG_ERR, "sysctlbyname(" ALLOW_AGGREGATE ") failed: %s", strerror(errno));
+		}
+	}
+
+	return;
+}
+
 - (void)processDefaultProxyChanges:(CFDictionaryRef)proxies
 {
 	CFArrayRef			global_proxy;
@@ -684,6 +740,8 @@ typedef struct resolverList {
 		}
 
 		if (spawnAgent) {
+			BOOL	ok;
+
 			AgentSubType subtype = kAgentSubTypeDefault;
 			NEPolicyConditionType conditionType = NEPolicyConditionTypeNone;
 			if ([self isGlobalProxy:proxies_copy]) {
@@ -692,11 +750,22 @@ typedef struct resolverList {
 				subtype = kAgentSubTypeGlobal;
 			}
 
-			[self spawnFloatingAgent:[ProxyAgent class]
-					entity:@proxyAgentDefault
-					agentSubType:subtype
-					addPolicyOfType:conditionType
-					publishData:data];
+			ok = [self spawnFloatingAgent:[ProxyAgent class]
+					       entity:@proxyAgentDefault
+					 agentSubType:subtype
+				      addPolicyOfType:conditionType
+					  publishData:data];
+			if (ok &&
+			    (subtype == kAgentSubTypeGlobal) &&
+			    [self isTCPConverterProxyEnabled:proxies_copy]) {
+				proxyAgent = [self.floatingProxyAgentList objectForKey:@proxyAgentDefault];
+				if ((proxyAgent != nil) &&
+				    [data isEqual:[proxyAgent getAgentData]]) {
+					[self.floatingProxyAgentList_TCPConverter setObject:proxyAgent
+										     forKey:@proxyAgentDefault];
+					updateTransportConverterProxyEnabled(TRUE);	// enable "net.inet.mptcp.allow_aggregate"
+				}
+			}
 		}
 	} else {
 		/* No default proxy config OR generic (no protocols enabled) default proxy config.
@@ -713,6 +782,16 @@ typedef struct resolverList {
 	CFRelease(global_proxy);
 }
 
+- (void)applyPolicies
+{
+	if (self.controlPolicySession != nil && ![self.controlPolicySession apply]) {
+		SC_log(LOG_ERR, "Failed to apply control policies");
+	}
+	if (self.policySession != nil && ![self.policySession apply]) {
+		SC_log(LOG_ERR, "Failed to apply policies");
+	}
+}
+
 - (void)processProxyChanges
 {
 	CFDictionaryRef			proxies;
@@ -721,12 +800,17 @@ typedef struct resolverList {
 	if (proxies == NULL) {
 		SC_log(LOG_INFO, "No proxy information");
 
+		BOOL destroyedAgent = NO;
 		NSMutableDictionary *copy = [self.floatingProxyAgentList copy];
 		for (NSString *entity in copy) {
 			id agent = [copy objectForKey:entity];
 			[self destroyFloatingAgent:agent];
+			destroyedAgent = YES;
 		}
 
+		if (destroyedAgent) {
+			[self applyPolicies];
+		}
 		return;
 	}
 
@@ -734,6 +818,8 @@ typedef struct resolverList {
 	[self processScopedProxyChanges:proxies];
 	[self processSupplementalProxyChanges:proxies];
 	[self processServiceSpecificProxyChanges:proxies];
+
+	[self applyPolicies];
 
 	CFRelease(proxies);
 }
@@ -1490,6 +1576,8 @@ remove_policy:
 done:
 
 	[self processOnionResolver:dns_config];
+	[self applyPolicies];
+
 	if (dns_config != NULL) {
 		dns_configuration_free(dns_config);
 	}
@@ -1752,7 +1840,6 @@ done:
 	NEPolicySession		*	session;
 	uint32_t			multiple_entity_offset;
 	NEPolicy		*	newPolicy;
-	BOOL				ok;
 	uint32_t			order;
 	uint32_t			orderForSkip;
 	NSMutableArray		*	policyArray;
@@ -1849,12 +1936,6 @@ done:
 		return NO;
 	}
 
-	ok = [session apply];
-	if (!ok) {
-		SC_log(LOG_NOTICE, "Could not apply policy for agent %@", [agent getAgentName]);
-		return NO;
-	}
-
 	policyArray = [self.policyDB objectForKey:[agent getAgentName]];
 	if (policyArray == nil) {
 		policyArray = [NSMutableArray array];
@@ -1864,7 +1945,7 @@ done:
 	[policyArray addObject:numberToNSNumber(policyID2)];
 	[self.policyDB setObject:policyArray forKey:[agent getAgentName]];
 
-	return ok;
+	return YES;
 }
 
 #pragma mark Agent manipulation functions
@@ -2031,6 +2112,7 @@ done:
 	BOOL ok = NO;
 
 	if ( agent != nil) {
+		NSString *		entity	= [agent getAssociatedEntity];
 		NSMutableArray	*	policyArray;
 
 		policyArray = [self.policyDB objectForKey:[agent getAgentName]];
@@ -2048,16 +2130,18 @@ done:
 				}
 			}
 
-			result = [session apply];
-			if (result == NO) {
-				SC_log(LOG_NOTICE, "Could not apply removed policies for agent %@", [agent getAgentName]);
-			}
-
 			[self.policyDB removeObjectForKey:[agent getAgentName]];
 		}
 
+		SC_log(LOG_INFO, "Destroying floating agent for %@", entity);
+
 		if ([agent getAgentType] == kAgentTypeProxy) {
-			[self.floatingProxyAgentList removeObjectForKey:[agent getAssociatedEntity]];
+			[self.floatingProxyAgentList removeObjectForKey:entity];
+
+			[self.floatingProxyAgentList_TCPConverter removeObjectForKey:entity];
+			if ([self.floatingProxyAgentList_TCPConverter count] == 0) {
+				updateTransportConverterProxyEnabled(FALSE);	// disable "net.inet.mptcp.allow_aggregate"
+			}
 		} else {
 			[self.floatingDNSAgentList removeObjectForKey:[agent getAssociatedEntity]];
 		}
@@ -2065,8 +2149,6 @@ done:
 		if ([agent getRegistrationObject] != nil) {
 			[self unregisterAgent:agent];
 		}
-
-		SC_log(LOG_INFO, "X - Destroyed agent %@", [agent getAgentName]);
 
 		/* Check if we need to close the "control" policy session */
 		if (self.controlPolicySession != nil) {
@@ -2082,13 +2164,9 @@ done:
 					SC_log(LOG_ERR, "Could not remove policies for agent %@", [agent getAgentName]);
 				}
 
-				ok = [self.controlPolicySession apply];
-				if (!ok) {
-					SC_log(LOG_ERR, "Could not apply policy change for agent %@", [agent getAgentName]);
-				}
-
 				self.controlPolicySession = nil;
 				SC_log(LOG_NOTICE, "Closed control policy session");
+
 			}
 		}
 
