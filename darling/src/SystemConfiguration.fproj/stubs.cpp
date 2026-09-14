@@ -118,6 +118,9 @@ CFDictionaryRef SCDynamicStoreCopyProxies (SCDynamicStoreRef store)
 	return rv;
 }
 
+// Declared in SCPrivate.h, which this file doesn't include; give the definition C linkage.
+extern "C" CFDictionaryRef SCDynamicStoreCopyProxiesWithOptions(SCDynamicStoreRef store, CFDictionaryRef options);
+
 CFDictionaryRef SCDynamicStoreCopyProxiesWithOptions(SCDynamicStoreRef store, CFDictionaryRef options)
 {
 	return SCDynamicStoreCopyProxies(store);
