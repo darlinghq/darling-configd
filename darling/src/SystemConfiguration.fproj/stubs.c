@@ -1,4 +1,6 @@
 #include <SystemConfiguration/SystemConfiguration.h>
+#include <SystemConfiguration/SCNetworkConfiguration.h>
+#include <SystemConfiguration/SCNetworkConnection.h>
 #include <CoreFoundation/CFRuntime.h>
 #include <dispatch/dispatch.h>
 #include <arpa/inet.h>
@@ -695,3 +697,45 @@ CFStringRef SCDynamicStoreKeyCreateHostNames(CFAllocatorRef allocator) {
 				       kSCDynamicStoreDomainSetup, kSCCompNetwork,
 				       kSCCompHostNames);
 };
+
+CFArrayRef SCNetworkInterfaceCopyAll(void)
+{
+	STUB();
+	return CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks);
+}
+
+SCNetworkConnectionRef SCNetworkConnectionCreateWithService(CFAllocatorRef allocator, CFStringRef serviceID, SCNetworkConnectionCallBack callout, SCNetworkConnectionContext* context)
+{
+	STUB();
+	return NULL;
+}
+
+CFArrayRef SCNetworkConnectionCopyAvailableServices(void)
+{
+	STUB();
+	return CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks);
+}
+
+CFDictionaryRef SCNetworkConnectionCopyExtendedStatus(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+}
+
+CFDictionaryRef SCNetworkConnectionCopyStatistics(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+}
+
+SCNetworkServiceRef SCNetworkConnectionGetService(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return NULL;
+}
+
+SCNetworkConnectionStatus SCNetworkConnectionGetStatus(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return 0; // kSCNetworkConnectionInvalid
+}
