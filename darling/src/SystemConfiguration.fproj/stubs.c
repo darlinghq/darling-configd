@@ -15,7 +15,11 @@
 #include <servers/bootstrap.h>
 #include "SCErrorMessages.h"
 
+#ifdef DEBUG
 #define STUB() printf("STUB %s\n", __func__)
+#else
+#define STUB() do {} while (0)
+#endif
 
 const CFStringRef kSCDynamicStoreUseSessionKeys = CFSTR("UseSessionKeys");
 
