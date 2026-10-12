@@ -19,7 +19,9 @@ static char* remove_whitespace(char* line);
 const char *
 dns_configuration_notify_key    ()
 {
-	return NULL;
+	// the key Apple's dnsinfo/dnsinfo_copy.c returns; nothing posts it yet,
+	// but callers need a valid name to register for notify(3) changes
+	return "com.apple.system.SystemConfiguration.dns_configuration";
 }
 
 dns_config_t *
