@@ -1,7 +1,8 @@
 /*
- * SC status code to message table, shared by SCD.c and the Darling
- * stub framework (darling/src/SystemConfiguration.fproj/stubs.c), so
- * SCErrorString() and SCCopyLastError() agree.
+ * SC status code to message table. SCD.c is not built into the Darling
+ * stub framework, so the table lives here for the stubs (stubs.c,
+ * SCErrorString) to share with SCD.c: there is one copy, and the two
+ * stay in step if SCD.c is built later.
  */
 
 #ifndef _SCERRORMESSAGES_H
