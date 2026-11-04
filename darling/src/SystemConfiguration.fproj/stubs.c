@@ -1,4 +1,9 @@
 #include <SystemConfiguration/SystemConfiguration.h>
+#include <errno.h>
+#include <string.h>
+#include <mach/mach_error.h>
+#include <servers/bootstrap.h>
+#include "SCErrorMessages.h"
 
 #define STUB() printf("STUB %s\n", __func__)
 
@@ -100,8 +105,33 @@ SCNetworkReachabilityRef SCNetworkReachabilityCreateWithAddress(CFAllocatorRef a
 
 CFStringRef SCDynamicStoreKeyCreateNetworkGlobalEntity(CFAllocatorRef allocator, CFStringRef domain, CFStringRef entity)
 {
-	STUB();
-	return NULL;
+	return CFStringCreateWithFormat(allocator, NULL, CFSTR("%@/%@/%@/%@"),
+					domain, kSCCompNetwork, kSCCompGlobal, entity);
+}
+
+CFStringRef SCDynamicStoreKeyCreateProxies(CFAllocatorRef allocator)
+{
+	return SCDynamicStoreKeyCreateNetworkGlobalEntity(allocator,
+							  kSCDynamicStoreDomainState,
+							  kSCEntNetProxies);
+}
+
+const char *SCErrorString(int status)
+{
+	size_t i;
+
+	for (i = 0; i < nSC_ERRMSGS; i++) {
+		if (sc_errmsgs[i].status == status) {
+			return sc_errmsgs[i].message;
+		}
+	}
+	if ((status > 0) && (status <= ELAST)) {
+		return strerror(status);
+	}
+	if ((status >= BOOTSTRAP_SUCCESS) && (status <= BOOTSTRAP_NO_MEMORY)) {
+		return bootstrap_strerror(status);
+	}
+	return mach_error_string(status);
 }
 
 CFPropertyListRef SCDynamicStoreCopyValue(SCDynamicStoreRef store, CFStringRef key)
