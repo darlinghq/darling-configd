@@ -453,33 +453,226 @@ const char *SCErrorString(int status)
 	return mach_error_string(status);
 }
 
-CFPropertyListRef SCDynamicStoreCopyValue(SCDynamicStoreRef store, CFStringRef key)
+/*
+ * SCDynamicStore
+ *
+ * There is no configd store in Darling. A store session is a real object
+ * that accepts notification keys and can be scheduled, but no change
+ * notifications are delivered: the callout is never called and the run
+ * loop source never fires. SCDynamicStoreCopyValue answers the global IPv4
+ * and IPv6 state keys with the interface the kernel routes Internet
+ * traffic through, and finds no value for any other key.
+ */
+struct __SCDynamicStore {
+	CFRuntimeBase base;
+	CFStringRef name;
+	CFArrayRef notificationKeys;
+	CFArrayRef notificationPatterns;
+	SCDynamicStoreCallBack callout;
+	SCDynamicStoreContext context;
+};
+
+static void storeFinalize(CFTypeRef cf)
 {
-	STUB();
-	return NULL;
+	struct __SCDynamicStore* store = (struct __SCDynamicStore*) cf;
+
+	if (store->name != NULL)
+		CFRelease(store->name);
+	if (store->notificationKeys != NULL)
+		CFRelease(store->notificationKeys);
+	if (store->notificationPatterns != NULL)
+		CFRelease(store->notificationPatterns);
+	if (store->context.release != NULL && store->context.info != NULL)
+		store->context.release(store->context.info);
+}
+
+static CFStringRef storeCopyDescription(CFTypeRef cf)
+{
+	struct __SCDynamicStore* store = (struct __SCDynamicStore*) cf;
+
+	return CFStringCreateWithFormat(NULL, NULL,
+		CFSTR("<SCDynamicStore %p> {name = %@}"), cf,
+		(store->name != NULL) ? store->name : CFSTR(""));
+}
+
+static const CFRuntimeClass storeClass = {
+	.version = 0,
+	.className = "SCDynamicStore",
+	.finalize = storeFinalize,
+	.copyDebugDesc = storeCopyDescription,
+};
+
+static CFTypeID storeTypeID = _kCFRuntimeNotATypeID;
+
+static void storeRegisterClass(void* unused)
+{
+	storeTypeID = _CFRuntimeRegisterClass(&storeClass);
+}
+
+CFTypeID SCDynamicStoreGetTypeID(void)
+{
+	static dispatch_once_t once;
+
+	dispatch_once_f(&once, NULL, storeRegisterClass);
+	return storeTypeID;
+}
+
+static Boolean isStore(SCDynamicStoreRef store)
+{
+	return store != NULL && CFGetTypeID(store) == SCDynamicStoreGetTypeID();
 }
 
 SCDynamicStoreRef SCDynamicStoreCreate(CFAllocatorRef allocator, CFStringRef name, SCDynamicStoreCallBack callout, SCDynamicStoreContext *context)
 {
-	STUB();
-	return NULL;
+	struct __SCDynamicStore* store;
+
+	store = (struct __SCDynamicStore*) _CFRuntimeCreateInstance(allocator,
+		SCDynamicStoreGetTypeID(),
+		sizeof(struct __SCDynamicStore) - sizeof(CFRuntimeBase), NULL);
+	if (store == NULL)
+		return NULL;
+
+	if (name != NULL)
+		store->name = CFStringCreateCopy(allocator, name);
+	store->callout = callout;
+	if (callout != NULL && context != NULL) {
+		store->context = *context;
+		if (store->context.retain != NULL && store->context.info != NULL)
+			store->context.info = (void*) store->context.retain(store->context.info);
+	}
+	return (SCDynamicStoreRef) store;
 }
 
 SCDynamicStoreRef __nullable SCDynamicStoreCreateWithOptions(CFAllocatorRef __nullable allocator, CFStringRef name, CFDictionaryRef __nullable storeOptions, SCDynamicStoreCallBack __nullable callout, SCDynamicStoreContext* __nullable context)
 {
-    STUB();
-	return NULL;
+	return SCDynamicStoreCreate(allocator, name, callout, context);
 };
 
 Boolean SCDynamicStoreSetDispatchQueue(SCDynamicStoreRef store, dispatch_queue_t queue)
 {
-	STUB();
-	return FALSE;
+	return isStore(store);
 }
 
 Boolean SCDynamicStoreSetNotificationKeys(SCDynamicStoreRef store, CFArrayRef __nullable keys, CFArrayRef __nullable patterns) {
-	STUB();
-	return FALSE;
+	struct __SCDynamicStore* s = (struct __SCDynamicStore*) store;
+
+	if (!isStore(store))
+		return FALSE;
+
+	if (keys != NULL)
+		CFRetain(keys);
+	if (patterns != NULL)
+		CFRetain(patterns);
+	if (s->notificationKeys != NULL)
+		CFRelease(s->notificationKeys);
+	if (s->notificationPatterns != NULL)
+		CFRelease(s->notificationPatterns);
+	s->notificationKeys = keys;
+	s->notificationPatterns = patterns;
+	return TRUE;
+}
+
+static void storeSourcePerform(void* info)
+{
+}
+
+CFRunLoopSourceRef SCDynamicStoreCreateRunLoopSource(CFAllocatorRef allocator, SCDynamicStoreRef store, CFIndex order)
+{
+	CFRunLoopSourceContext context;
+
+	if (!isStore(store))
+		return NULL;
+
+	// The source keeps the session alive while it exists.
+	memset(&context, 0, sizeof(context));
+	context.info = (void*) store;
+	context.retain = CFRetain;
+	context.release = CFRelease;
+	context.copyDescription = CFCopyDescription;
+	context.perform = storeSourcePerform;
+	return CFRunLoopSourceCreate(allocator, order, &context);
+}
+
+// The interface whose address the kernel picks for a connection towards a
+// documentation address (see documentationAddress()), i.e. the interface of
+// the default route. Nothing is sent.
+static CFStringRef copyPrimaryInterface(int family)
+{
+	struct sockaddr_storage remote, local;
+	socklen_t localLen = sizeof(local);
+	struct ifaddrs *interfaces, *ifa;
+	CFStringRef name = NULL;
+	int fd, err;
+
+	documentationAddress(family, &remote);
+	fd = socket(family, SOCK_DGRAM, 0);
+	if (fd < 0)
+		return NULL;
+	err = connect(fd, (struct sockaddr*) &remote, sockaddrLength(family));
+	if (err == 0)
+		err = getsockname(fd, (struct sockaddr*) &local, &localLen);
+	close(fd);
+	if (err != 0)
+		return NULL;
+
+	if (getifaddrs(&interfaces) != 0)
+		return NULL;
+	for (ifa = interfaces; ifa != NULL; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL || !(ifa->ifa_flags & IFF_UP)
+			|| (ifa->ifa_flags & IFF_LOOPBACK)
+			|| ifa->ifa_addr->sa_family != family)
+			continue;
+		if (sameAddress(ifa->ifa_addr, (struct sockaddr*) &local)) {
+			name = CFStringCreateWithCString(NULL, ifa->ifa_name, kCFStringEncodingUTF8);
+			break;
+		}
+	}
+	freeifaddrs(interfaces);
+	return name;
+}
+
+static Boolean isGlobalStateKey(CFStringRef key, CFStringRef entity)
+{
+	CFStringRef globalKey;
+	Boolean equal;
+
+	globalKey = SCDynamicStoreKeyCreateNetworkGlobalEntity(NULL,
+		kSCDynamicStoreDomainState, entity);
+	if (globalKey == NULL)
+		return FALSE;
+	equal = CFEqual(key, globalKey);
+	CFRelease(globalKey);
+	return equal;
+}
+
+CFPropertyListRef SCDynamicStoreCopyValue(SCDynamicStoreRef store, CFStringRef key)
+{
+	CFStringRef primary;
+	CFDictionaryRef value;
+	int family;
+
+	if (key == NULL || CFGetTypeID(key) != CFStringGetTypeID())
+		return NULL;
+	if (store != NULL && !isStore(store))
+		return NULL;
+
+	if (isGlobalStateKey(key, kSCEntNetIPv4))
+		family = AF_INET;
+	else if (isGlobalStateKey(key, kSCEntNetIPv6))
+		family = AF_INET6;
+	else
+		return NULL;
+
+	primary = copyPrimaryInterface(family);
+	if (primary == NULL)
+		return NULL;
+
+	const void* keys[] = { kSCDynamicStorePropNetPrimaryInterface };
+	const void* values[] = { primary };
+	value = CFDictionaryCreate(NULL, keys, values, 1,
+		&kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+	CFRelease(primary);
+	return value;
 }
 
 CFStringRef SCDynamicStoreKeyCreateComputerName(CFAllocatorRef allocator) {
