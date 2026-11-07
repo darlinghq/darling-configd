@@ -41,7 +41,7 @@ set(sc_sources
 	#SCDConsoleUser.c
 	#SCDGet.c
 	#SCDHostName.c
-	#SCDKeys.c
+	SCDKeys.c
 	#SCDList.c
 	#SCDNotifierAdd.c
 	#SCDNotifierCancel.c
