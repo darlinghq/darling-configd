@@ -103,12 +103,6 @@ SCNetworkReachabilityRef SCNetworkReachabilityCreateWithAddress(CFAllocatorRef a
 	return NULL;
 }
 
-CFStringRef SCDynamicStoreKeyCreateNetworkGlobalEntity(CFAllocatorRef allocator, CFStringRef domain, CFStringRef entity)
-{
-	return CFStringCreateWithFormat(allocator, NULL, CFSTR("%@/%@/%@/%@"),
-					domain, kSCCompNetwork, kSCCompGlobal, entity);
-}
-
 CFStringRef SCDynamicStoreKeyCreateProxies(CFAllocatorRef allocator)
 {
 	return SCDynamicStoreKeyCreateNetworkGlobalEntity(allocator,
@@ -152,12 +146,6 @@ SCDynamicStoreRef __nullable SCDynamicStoreCreateWithOptions(CFAllocatorRef __nu
 	return NULL;
 };
 
-CFStringRef SCDynamicStoreKeyCreate(CFAllocatorRef allocator, CFStringRef fmt, ...)
-{
-	STUB();
-	return NULL;
-}
-
 Boolean SCDynamicStoreSetDispatchQueue(SCDynamicStoreRef store, dispatch_queue_t queue)
 {
 	STUB();
@@ -170,8 +158,8 @@ Boolean SCDynamicStoreSetNotificationKeys(SCDynamicStoreRef store, CFArrayRef __
 }
 
 CFStringRef SCDynamicStoreKeyCreateComputerName(CFAllocatorRef allocator) {
-	STUB();
-	return NULL;
+	return SCDynamicStoreKeyCreate(allocator, CFSTR("%@/%@"),
+				       kSCDynamicStoreDomainSetup, kSCCompSystem);
 };
 
 Boolean SCPreferencesSetComputerName(SCPreferencesRef	prefs, CFStringRef __nullable	name, CFStringEncoding	nameEncoding) {
@@ -185,11 +173,7 @@ Boolean SCPreferencesSetLocalHostName(SCPreferencesRef	prefs, CFStringRef __null
 };
 
 CFStringRef SCDynamicStoreKeyCreateHostNames(CFAllocatorRef allocator) {
-	STUB();
-	return NULL;
-};
-
-CFStringRef SCDynamicStoreKeyCreateNetworkInterfaceEntity(CFAllocatorRef allocator, CFStringRef domain, CFStringRef ifname, CFStringRef entity) {
-	STUB();
-	return NULL;
+	return SCDynamicStoreKeyCreate(allocator, CFSTR("%@/%@/%@"),
+				       kSCDynamicStoreDomainSetup, kSCCompNetwork,
+				       kSCCompHostNames);
 };
