@@ -727,13 +727,13 @@ CFArrayRef SCNetworkInterfaceCopyAll(void)
 	return CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks);
 }
 
-SCNetworkConnectionRef SCNetworkConnectionCreateWithService(CFAllocatorRef allocator, CFStringRef serviceID, SCNetworkConnectionCallBack callout, SCNetworkConnectionContext* context)
+SCNetworkConnectionRef SCNetworkConnectionCreateWithService(CFAllocatorRef allocator, SCNetworkServiceRef service, SCNetworkConnectionCallBack callout, SCNetworkConnectionContext* context)
 {
 	STUB();
 	return NULL;
 }
 
-CFArrayRef SCNetworkConnectionCopyAvailableServices(void)
+CFArrayRef SCNetworkConnectionCopyAvailableServices(SCNetworkSetRef set)
 {
 	STUB();
 	return CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks);
@@ -760,5 +760,5 @@ SCNetworkServiceRef SCNetworkConnectionGetService(SCNetworkConnectionRef connect
 SCNetworkConnectionStatus SCNetworkConnectionGetStatus(SCNetworkConnectionRef connection)
 {
 	STUB();
-	return 0; // kSCNetworkConnectionInvalid
+	return kSCNetworkConnectionInvalid;
 }

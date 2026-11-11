@@ -201,7 +201,11 @@ _nwi_state_copy_data()
 	xpc_object_t		reply;
 
 	if (!libSC_info_available()) {
+#ifdef DARLING
 		os_log(OS_LOG_DEFAULT, "*** network information service unavailable");
+#else
+		os_log(OS_LOG_DEFAULT, "*** network information requested between fork() and exec()");
+#endif
 		return NULL;
 	}
 
