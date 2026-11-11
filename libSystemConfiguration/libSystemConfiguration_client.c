@@ -37,7 +37,12 @@
 #pragma mark libSC fork handlers
 
 
+#ifdef DARLING
+// Darling does not currently build the NetworkInformation XPC server.
+static boolean_t _available	= FALSE;
+#else
 static boolean_t _available	= TRUE;
+#endif
 
 // These functions are registered with libSystem to
 // handle pthread_atfork callbacks.

@@ -1,4 +1,6 @@
 #include <SystemConfiguration/SystemConfiguration.h>
+#include <SystemConfiguration/SCNetworkConfiguration.h>
+#include <SystemConfiguration/SCNetworkConnection.h>
 #include <CoreFoundation/CFRuntime.h>
 #include <dispatch/dispatch.h>
 #include <arpa/inet.h>
@@ -13,9 +15,32 @@
 #include <servers/bootstrap.h>
 #include "SCErrorMessages.h"
 
+#ifdef DEBUG
 #define STUB() printf("STUB %s\n", __func__)
+#else
+#define STUB() do {} while (0)
+#endif
 
 const CFStringRef kSCDynamicStoreUseSessionKeys = CFSTR("UseSessionKeys");
+
+CFStringRef SCNetworkInterfaceGetInterfaceType(SCNetworkInterfaceRef interface)
+{
+    STUB();
+    return NULL;
+}
+
+SCPreferencesRef SCPreferencesCreate(CFAllocatorRef allocator, CFStringRef name,
+                                     CFStringRef prefsID)
+{
+    STUB();
+    return NULL;
+}
+
+CFDictionaryRef SCPreferencesPathGetValue(SCPreferencesRef prefs, CFStringRef path)
+{
+    STUB();
+    return NULL;
+}
 
 CFTypeID SCNetworkConnectionGetTypeID(void)
 {
@@ -695,3 +720,45 @@ CFStringRef SCDynamicStoreKeyCreateHostNames(CFAllocatorRef allocator) {
 				       kSCDynamicStoreDomainSetup, kSCCompNetwork,
 				       kSCCompHostNames);
 };
+
+CFArrayRef SCNetworkInterfaceCopyAll(void)
+{
+	STUB();
+	return CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks);
+}
+
+SCNetworkConnectionRef SCNetworkConnectionCreateWithService(CFAllocatorRef allocator, SCNetworkServiceRef service, SCNetworkConnectionCallBack callout, SCNetworkConnectionContext* context)
+{
+	STUB();
+	return NULL;
+}
+
+CFArrayRef SCNetworkConnectionCopyAvailableServices(SCNetworkSetRef set)
+{
+	STUB();
+	return CFArrayCreate(kCFAllocatorDefault, NULL, 0, &kCFTypeArrayCallBacks);
+}
+
+CFDictionaryRef SCNetworkConnectionCopyExtendedStatus(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+}
+
+CFDictionaryRef SCNetworkConnectionCopyStatistics(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return CFDictionaryCreate(kCFAllocatorDefault, NULL, NULL, 0, &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
+}
+
+SCNetworkServiceRef SCNetworkConnectionGetService(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return NULL;
+}
+
+SCNetworkConnectionStatus SCNetworkConnectionGetStatus(SCNetworkConnectionRef connection)
+{
+	STUB();
+	return kSCNetworkConnectionInvalid;
+}
