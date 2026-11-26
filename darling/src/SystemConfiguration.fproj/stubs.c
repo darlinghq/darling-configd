@@ -23,7 +23,39 @@
 
 const CFStringRef kSCDynamicStoreUseSessionKeys = CFSTR("UseSessionKeys");
 
+const CFStringRef kSCNetworkInterfaceType6to4      = CFSTR("6to4");
+const CFStringRef kSCNetworkInterfaceTypeBluetooth  = CFSTR("Bluetooth");
+const CFStringRef kSCNetworkInterfaceTypeBond       = CFSTR("Bond");
+const CFStringRef kSCNetworkInterfaceTypeBridge     = CFSTR("Bridge");
+const CFStringRef kSCNetworkInterfaceTypeEthernet   = CFSTR("Ethernet");
+const CFStringRef kSCNetworkInterfaceTypeFireWire   = CFSTR("FireWire");
+const CFStringRef kSCNetworkInterfaceTypeIEEE80211  = CFSTR("IEEE80211");
+const CFStringRef kSCNetworkInterfaceTypeIPSec      = CFSTR("IPSec");
+const CFStringRef kSCNetworkInterfaceTypeIrDA       = CFSTR("IrDA");
+const CFStringRef kSCNetworkInterfaceTypeL2TP       = CFSTR("L2TP");
+const CFStringRef kSCNetworkInterfaceTypeLoopback   = CFSTR("Loopback");
+const CFStringRef kSCNetworkInterfaceTypeModem      = CFSTR("Modem");
+const CFStringRef kSCNetworkInterfaceTypePPP        = CFSTR("PPP");
+const CFStringRef kSCNetworkInterfaceTypePPTP       = CFSTR("PPTP");
+const CFStringRef kSCNetworkInterfaceTypeSerial     = CFSTR("Serial");
+const CFStringRef kSCNetworkInterfaceTypeVLAN       = CFSTR("VLAN");
+const CFStringRef kSCNetworkInterfaceTypeVPN        = CFSTR("VPN");
+const CFStringRef kSCNetworkInterfaceTypeWWAN       = CFSTR("WWAN");
+const CFStringRef kSCNetworkInterfaceTypeIPv4       = CFSTR("IPv4");
+
 CFStringRef SCNetworkInterfaceGetInterfaceType(SCNetworkInterfaceRef interface)
+{
+    STUB();
+    return NULL;
+}
+
+SCNetworkServiceRef SCNetworkServiceCopy(SCPreferencesRef prefs, CFStringRef serviceID)
+{
+    STUB();
+    return NULL;
+}
+
+SCNetworkInterfaceRef SCNetworkServiceGetInterface(SCNetworkServiceRef service)
 {
     STUB();
     return NULL;
